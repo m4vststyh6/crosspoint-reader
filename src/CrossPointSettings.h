@@ -227,9 +227,6 @@ class CrossPointSettings {
   static constexpr uint8_t HIST_CAP_DEFAULT = 100;
   uint8_t lookupHistoryCap = HIST_CAP_DEFAULT;
   uint8_t holdToLookup = 0;
-  // CLEANUP: on Auto-only commit, delete these 3 lines (enum + field for debug toggle)
-  enum DEBUG_LOOKUP_POPUP_MODE : uint8_t { DBG_POPUP_AUTO = 0, DBG_POPUP_ON = 1, DBG_POPUP_OFF = 2 };
-  uint8_t debugLookupPopupMode = DBG_POPUP_AUTO;
   // Tilt-based page turning (X3 only — requires QMI8658 IMU)
   uint8_t tiltPageTurn = TILT_OFF;
   // Language setting (Language enum index, default 0 = EN)

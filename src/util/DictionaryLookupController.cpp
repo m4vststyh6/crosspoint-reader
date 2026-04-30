@@ -292,18 +292,9 @@ void DictionaryLookupController::recordPendingHistory() {
   }
 }
 
-// CLEANUP: on Auto-only commit, delete this line AND collapse the switch below to keep only the DBG_POPUP_AUTO branch
 bool DictionaryLookupController::shouldShowPopup() {
-  switch (SETTINGS.debugLookupPopupMode) {
-    case CrossPointSettings::DBG_POPUP_ON:
-      return true;
-    case CrossPointSettings::DBG_POPUP_OFF:
-      return false;
-    case CrossPointSettings::DBG_POPUP_AUTO:
-    default:
-      if (csptEntryCountCached == UINT32_MAX) {
-        csptEntryCountCached = Dictionary::readCsptEntryCount(cachePath.c_str());
-      }
-      return csptEntryCountCached == 0 || csptEntryCountCached > AUTO_POPUP_CSPT_ENTRY_THRESHOLD;
+  if (csptEntryCountCached == UINT32_MAX) {
+    csptEntryCountCached = Dictionary::readCsptEntryCount(cachePath.c_str());
   }
+  return csptEntryCountCached == 0 || csptEntryCountCached > AUTO_POPUP_CSPT_ENTRY_THRESHOLD;
 }
