@@ -232,6 +232,8 @@ class CrossPointSettings {
   uint8_t debugLookupPopupMode = DBG_POPUP_AUTO;
   // Tilt-based page turning (X3 only — requires QMI8658 IMU)
   uint8_t tiltPageTurn = TILT_OFF;
+  // Language setting (Language enum index, default 0 = EN)
+  uint8_t language = 0;
 
   ~CrossPointSettings() = default;
 
@@ -256,6 +258,7 @@ class CrossPointSettings {
 
  private:
   bool loadFromBinaryFile();
+  bool migrateLanguageBinaryFile();
 
  public:
   float getReaderLineCompression() const;

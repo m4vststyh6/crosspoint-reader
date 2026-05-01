@@ -264,6 +264,7 @@ void setup() {
   HalSystem::checkPanic();
 
   SETTINGS.loadFromFile();
+
   // Clamp lookup history cap to valid range
   if (SETTINGS.lookupHistoryCap < CrossPointSettings::HIST_CAP_MIN ||
       SETTINGS.lookupHistoryCap > CrossPointSettings::HIST_CAP_MAX ||
@@ -273,6 +274,7 @@ void setup() {
   I18N.loadSettings();
   // Validate the stored dictionary path still exists on the SD card.
   Dictionary::isValidDictionary();
+  I18N.setLanguage(static_cast<Language>(SETTINGS.language));
   KOREADER_STORE.loadFromFile();
   OPDS_STORE.loadFromFile();
   UITheme::getInstance().reload();
