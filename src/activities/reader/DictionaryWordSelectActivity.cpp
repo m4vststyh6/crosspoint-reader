@@ -273,9 +273,6 @@ void DictionaryWordSelectActivity::loop() {
 void DictionaryWordSelectActivity::render(RenderLock&&) {
   const int lineHeight = renderer.getLineHeight(SETTINGS.getReaderFontId());
   const int currIdx = navigator.getCurrentFlatIndex();
-  LOG_DBG("WSEL", "render mode=%s prev=%d curr=%d ctrlActive=%d",
-          nextRenderMode_ == RenderMode::Differential ? "DIFF" : "FULL", prevHighlightIdx_, currIdx,
-          controller.isActive() ? 1 : 0);
 
   // Differential fast path. Only valid when:
   //   - we set it up on the previous frame (RenderMode::Differential),
@@ -289,17 +286,14 @@ void DictionaryWordSelectActivity::render(RenderLock&&) {
       // transition failures on consecutive fast partial refreshes. Use the full displayBuffer
       // here instead — we still save the expensive page->render call, which is the bulk of the
       // pre-optimization cost.
-      LOG_DBG("SBR", "push diff via full displayBuffer (dirty was screen %d,%d,%d,%d)", dirty->x, dirty->y,
-              dirty->width, dirty->height);
       renderer.displayBuffer(HalDisplay::FAST_REFRESH);
       prevHighlightIdx_ = currIdx;
       return;
     }
-    LOG_DBG("WSEL", "diff returned nullopt -> full repaint");
+    // Fall through to full repaint.
   }
 
   // Full repaint path.
-  LOG_DBG("WSEL", "full repaint path");
   renderer.clearScreen();
   if (controller.render()) {
     // Controller drew an overlay; framebuffer state is unknown.
