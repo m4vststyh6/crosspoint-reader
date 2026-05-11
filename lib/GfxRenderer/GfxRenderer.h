@@ -152,6 +152,15 @@ class GfxRenderer {
                        bool roundTopRight, bool roundBottomLeft, bool roundBottomRight, bool state) const;
   void maskRoundedRectOutsideCorners(int x, int y, int width, int height, int radius, Color color = Color::White) const;
   void fillRect(int x, int y, int width, int height, bool state = true) const;
+  // Fast clear-to-white over a rectangle. Equivalent in effect to
+  // fillRect(x, y, w, h, false) but uses byte-aligned memset for the
+  // middle of each panel-memory row, with bit-mask OR only at the byte
+  // edges. Roughly 10x faster than fillRect for wide regions because it
+  // avoids the per-pixel rotateCoordinates/bounds-check/bit-RMW path.
+  // Handles all four orientations via rotateCoordinates on the rect's
+  // two opposite corners. Clamps to panel bounds; out-of-bounds rects
+  // are silently dropped.
+  void clearRect(int x, int y, int width, int height) const;
   void fillRectDither(int x, int y, int width, int height, Color color) const;
   void fillRoundedRect(int x, int y, int width, int height, int cornerRadius, Color color) const;
   void fillRoundedRect(int x, int y, int width, int height, int cornerRadius, bool roundTopLeft, bool roundTopRight,

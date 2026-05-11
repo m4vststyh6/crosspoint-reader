@@ -154,7 +154,7 @@ void EpubReaderActivity::loop() {
   if (SETTINGS.holdToLookup && mappedInput.isPressed(MappedInputManager::Button::Confirm) &&
       mappedInput.getHeldTime() >= Dictionary::LONG_PRESS_MS && section &&
       Dictionary::exists(epub->getCachePath().c_str())) {
-    openWordSelect();
+    openWordSelect(/*framebufferContainsPage=*/true);
     return;
   }
 
@@ -355,7 +355,7 @@ void EpubReaderActivity::openReaderMenu() {
       });
 }
 
-void EpubReaderActivity::openWordSelect() {
+void EpubReaderActivity::openWordSelect(bool framebufferContainsPage) {
   auto pageForLookup = section ? section->loadPageFromSectionFile() : nullptr;
   if (!pageForLookup) {
     requestUpdate();
@@ -384,9 +384,9 @@ void EpubReaderActivity::openWordSelect() {
     }
   }
   const std::string bookCachePath = epub->getCachePath();
-  startActivityForResult(std::make_unique<DictionaryWordSelectActivity>(renderer, mappedInput, std::move(pageForLookup),
-                                                                        orientedMarginLeft, orientedMarginTop,
-                                                                        bookCachePath, nextPageFirstWord),
+  startActivityForResult(std::make_unique<DictionaryWordSelectActivity>(
+                             renderer, mappedInput, std::move(pageForLookup), orientedMarginLeft, orientedMarginTop,
+                             bookCachePath, nextPageFirstWord, framebufferContainsPage),
                          [this](const ActivityResult&) {
                            ignoreBackUntilRelease = true;
                            requestUpdate();
@@ -547,7 +547,9 @@ void EpubReaderActivity::onReaderMenuConfirm(EpubReaderMenuActivity::MenuAction 
       break;
     }
     case EpubReaderMenuActivity::MenuAction::LOOKUP: {
-      openWordSelect();
+      // Menu activity rendered over the page; the framebuffer no longer
+      // matches what DictionaryWordSelectActivity expects.
+      openWordSelect(/*framebufferContainsPage=*/false);
       break;
     }
     case EpubReaderMenuActivity::MenuAction::LOOKUP_HISTORY: {

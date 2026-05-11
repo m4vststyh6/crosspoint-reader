@@ -15,14 +15,16 @@ class DictionaryWordSelectActivity final : public Activity {
  public:
   explicit DictionaryWordSelectActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
                                         std::unique_ptr<Page> page, int marginLeft, int marginTop,
-                                        const std::string& cachePath, const std::string& nextPageFirstWord = "")
+                                        const std::string& cachePath, const std::string& nextPageFirstWord = "",
+                                        bool framebufferContainsPage = false)
       : Activity("DictionaryWordSelect", renderer, mappedInput),
         page(std::move(page)),
         marginLeft(marginLeft),
         marginTop(marginTop),
         cachePath(cachePath),
         nextPageFirstWord(nextPageFirstWord),
-        controller(renderer, mappedInput, *this, cachePath) {}
+        controller(renderer, mappedInput, *this, cachePath),
+        framebufferContainsPage_(framebufferContainsPage) {}
 
   void onEnter() override;
   void onExit() override;
@@ -48,6 +50,14 @@ class DictionaryWordSelectActivity final : public Activity {
   enum class RenderMode { FullPage, Differential };
   RenderMode nextRenderMode_ = RenderMode::FullPage;
   int prevHighlightIdx_ = -1;
+
+  // One-shot opt-in from the caller: "the framebuffer already contains the
+  // page at marginLeft/marginTop (e.g. EpubReader just rendered it before the
+  // hold-to-lookup gesture)". When true, the first render() skips clearScreen
+  // + page->render and overlays only the highlight + button hints. Consumed
+  // (cleared) on the first render() call regardless of which branch is taken,
+  // so any future full-repaint goes through the normal re-render path.
+  bool framebufferContainsPage_ = false;
 
   bool skipLoopDelay() override { return controller.skipLoopDelay(); }
 

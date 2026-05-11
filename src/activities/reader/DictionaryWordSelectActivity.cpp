@@ -1,5 +1,6 @@
 #include "DictionaryWordSelectActivity.h"
 
+#include <FontCacheManager.h>
 #include <GfxRenderer.h>
 #include <I18n.h>
 #include <Utf8.h>
@@ -45,6 +46,12 @@ void DictionaryWordSelectActivity::extractWords(std::vector<WordSelectNavigator:
   rows.clear();
   rows.reserve(16);
 
+  // Natural inter-word space at the regular style — fallback for blocks
+  // where we can't derive a per-line gap (single-word blocks, degenerate
+  // first-word measurements).
+  const int16_t naturalSpaceWidth =
+      static_cast<int16_t>(renderer.getTextAdvanceX(SETTINGS.getReaderFontId(), " ", EpdFontFamily::REGULAR));
+
   for (const auto& element : page->elements) {
     if (element->getTag() != TAG_PageLine) continue;
     const auto* line = static_cast<const PageLine*>(element.get());
@@ -54,6 +61,21 @@ void DictionaryWordSelectActivity::extractWords(std::vector<WordSelectNavigator:
     const auto& wordList = block->getWords();
     const auto& xPosList = block->getWordXpos();
     const auto& styleList = block->getWordStyles();
+
+    // Derive per-line inter-word gap by measuring the first word's actual
+    // width and subtracting from xPos[1] - xPos[0]. Justified blocks
+    // stretch the natural space (ParsedText.cpp:514-553 adds justifyExtra
+    // per gap), so a single global space width leaves residual trailing
+    // gap on justified lines. One getTextWidth per block (~10-20 per page)
+    // gives the line-specific gap that yields tight highlights everywhere.
+    int16_t lineGapWidth = naturalSpaceWidth;
+    if (wordList.size() >= 2 && xPosList.size() >= 2 && !wordList[0].empty()) {
+      const EpdFontFamily::Style firstStyle = (!styleList.empty()) ? styleList[0] : EpdFontFamily::REGULAR;
+      const int16_t firstWidth =
+          static_cast<int16_t>(renderer.getTextWidth(SETTINGS.getReaderFontId(), wordList[0].c_str(), firstStyle));
+      const int16_t derivedGap = static_cast<int16_t>(xPosList[1] - xPosList[0] - firstWidth);
+      if (derivedGap > 0) lineGapWidth = derivedGap;
+    }
 
     auto wordIt = wordList.begin();
     auto xIt = xPosList.begin();
@@ -91,7 +113,40 @@ void DictionaryWordSelectActivity::extractWords(std::vector<WordSelectNavigator:
       if (partStart < wordText.size()) splitStarts.push_back(partStart);
 
       if (splitStarts.size() <= 1 && partStart == 0) {
-        int16_t wordWidth = renderer.getTextWidth(SETTINGS.getReaderFontId(), wordText.c_str(), wordStyle);
+        // Derive width from the already-laid-out next-word xpos. This avoids
+        // per-word getTextWidth() calls, which on SD-card fonts trigger a
+        // glyph fetch per missing codepoint and thrash the 8-slot overflow
+        // ring (OVERFLOW_CAPACITY in SdCardFont.h). With this derivation,
+        // measurements drop from ~100-200 per page to ~10-20 (one per
+        // line — the last word per block, handled below).
+        //
+        // The raw xpos diff includes the trailing inter-word gap; subtract
+        // lineGapWidth (derived per-block from the first word, accounting
+        // for justified-line stretching) so the highlight rectangle hugs
+        // the visible glyphs rather than extending into the gap before
+        // the next word.
+        //
+        // Punctuation tokens skipped above leave their xpos entries in
+        // xPosList as boundary markers; the diff to the next iterator
+        // position correctly covers the visual run regardless of whether
+        // the next token is a word or a punctuation token.
+        //
+        // Continuation-word negative kerning (see ParsedText layout), or
+        // short words like "I" where word + space ~= spaceWidth, can make
+        // the post-subtraction width zero or negative; clamp to a small
+        // positive floor so downstream consumers (highlight fillRect,
+        // findClosestWord centerX) stay well-formed.
+        //
+        // Last word per block has no next xpos — fall back to getTextWidth.
+        // That's ~1 SD measurement per text line, manageable for the ring.
+        int16_t wordWidth;
+        const auto nextXIt = xIt + 1;
+        if (nextXIt != xPosList.end()) {
+          const int16_t raw = static_cast<int16_t>(*nextXIt - *xIt);
+          wordWidth = std::max(static_cast<int16_t>(1), static_cast<int16_t>(raw - lineGapWidth));
+        } else {
+          wordWidth = renderer.getTextWidth(SETTINGS.getReaderFontId(), wordText.c_str(), wordStyle);
+        }
         {
           uint16_t off = WordSelectNavigator::poolAppend(textPool, wordText.c_str(), wordText.size());
           WordSelectNavigator::WordInfo wi;
@@ -293,6 +348,58 @@ void DictionaryWordSelectActivity::render(RenderLock&&) {
     // Fall through to full repaint.
   }
 
+  // Skip-initial-render fast path. Fires at most once per activity instance,
+  // when the caller signalled the framebuffer already contains the page at
+  // our margins (currently only EpubReaderActivity's hold-to-lookup path).
+  // Conditions:
+  //   - flag still set (one-shot),
+  //   - controller has nothing to draw (an active controller would mean we
+  //     re-entered render() after a sub-activity returned without the
+  //     framebuffer being reset by forceFullRepaintOnNextRender()),
+  //   - we have a current selection (currIdx >= 0); otherwise there is
+  //     nothing to overlay and we fall through to a normal repaint.
+  // We consume the flag unconditionally on first entry so any later
+  // full-repaint goes through the normal clearScreen + page->render path.
+  if (framebufferContainsPage_) {
+    framebufferContainsPage_ = false;
+    if (!controller.isActive() && currIdx >= 0) {
+      // Clear the bottom status-bar strip that EpubReader rendered (chapter,
+      // page numbers, battery, progress bar). The menu→lookup path naturally
+      // wipes this via clearScreen() + page->render(); the fast path skipped
+      // both, so we explicitly clear only that reserved region to match.
+      // The geometry mirrors EpubReaderActivity's orientedMarginBottom
+      // calculation (bezel + max(screenMargin, statusBarHeight)).
+      int bezelTop, bezelRight, bezelBottom, bezelLeft;
+      renderer.getOrientedViewableTRBL(&bezelTop, &bezelRight, &bezelBottom, &bezelLeft);
+      const int reservedHeight =
+          std::max(static_cast<int>(SETTINGS.screenMargin), UITheme::getInstance().getStatusBarHeight());
+      const int clearY = renderer.getScreenHeight() - bezelBottom - reservedHeight;
+      const int clearW = renderer.getScreenWidth() - bezelLeft - bezelRight;
+      renderer.clearRect(bezelLeft, clearY, clearW, reservedHeight);
+
+      auto setup = navigator.renderHighlightDifferential(renderer, lineHeight, /*prevWordIdx=*/-1, currIdx);
+      bool snapshotPrimed = setup.has_value();
+      if (!snapshotPrimed) {
+        // Hyphenated wrap or oversize capture. The framebuffer still holds
+        // the page, but we cannot prime the snapshot for the differential
+        // path. Draw the multi-word highlight (which overwrites pixels under
+        // each highlight rect) and force the next render to do a full
+        // repaint so the renderer state is consistent. The user just pays
+        // for one regular page render on the next cursor move instead of
+        // on entry.
+        navigator.renderHighlight(renderer, lineHeight);
+      }
+      const auto labels = mappedInput.mapLabels("", "", "", "");
+      GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+      renderer.displayBuffer(HalDisplay::FAST_REFRESH);
+      prevHighlightIdx_ = currIdx;
+      nextRenderMode_ = snapshotPrimed ? RenderMode::Differential : RenderMode::FullPage;
+      return;
+    }
+    // Flag was set but conditions weren't met (controller active or no
+    // current selection). Fall through to the normal full-repaint path.
+  }
+
   // Full repaint path.
   renderer.clearScreen();
   if (controller.render()) {
@@ -302,6 +409,14 @@ void DictionaryWordSelectActivity::render(RenderLock&&) {
     return;
   }
 
+  // Font prewarm: scan pass accumulates text, then prewarm, then real render.
+  // Without this, every cold codepoint cold-misses the 8-slot SD glyph
+  // overflow ring and the page render serializes ~100+ individual SD reads.
+  // Same pattern as EpubReaderActivity::renderContents().
+  auto* fcm = renderer.getFontCacheManager();
+  auto scope = fcm->createPrewarmScope();
+  page->render(renderer, SETTINGS.getReaderFontId(), marginLeft, marginTop);  // scan pass
+  scope.endScanAndPrewarm();
   page->render(renderer, SETTINGS.getReaderFontId(), marginLeft, marginTop);
 
   // Set up snapshot AND draw the highlight via the differential entry point with

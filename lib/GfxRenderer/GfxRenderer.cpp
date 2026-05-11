@@ -7,6 +7,7 @@
 #include <Utf8.h>
 
 #include <algorithm>
+#include <cstring>
 
 #include "FontCacheManager.h"
 
@@ -539,6 +540,70 @@ void GfxRenderer::drawRoundedRect(const int x, const int y, const int width, con
 void GfxRenderer::fillRect(const int x, const int y, const int width, const int height, const bool state) const {
   for (int fillY = y; fillY < y + height; fillY++) {
     drawLine(x, fillY, x + width - 1, fillY, state);
+  }
+}
+
+// Bit layout reminder (matches drawPixel at top of file): for a physical
+// panel pixel at column phyX in a byte, bitPosition = 7 - (phyX % 8), MSB
+// first. State=true in drawPixel CLEARS the bit (renders black). White
+// pixels therefore have bit=1. To "clear" a region to white, we set all
+// the affected bits to 1 (OR the appropriate masks into the panel bytes).
+void GfxRenderer::clearRect(const int x, const int y, const int width, const int height) const {
+  if (width <= 0 || height <= 0) return;
+
+  // Rotate two opposite corners of the screen rect into panel coordinates
+  // and take their axis-aligned bounding box — same approach used by
+  // screenRectToAlignedMemRect above, but we don't need to snap to
+  // byte boundaries because we mask the leading/trailing bits below.
+  int px1, py1, px2, py2;
+  rotateCoordinates(orientation, x, y, &px1, &py1, panelWidth, panelHeight);
+  rotateCoordinates(orientation, x + width - 1, y + height - 1, &px2, &py2, panelWidth, panelHeight);
+
+  int pMinX = std::min(px1, px2);
+  int pMaxX = std::max(px1, px2);
+  int pMinY = std::min(py1, py2);
+  int pMaxY = std::max(py1, py2);
+
+  // Clamp to panel bounds. Silently drop a fully out-of-bounds rect; that
+  // matches the policy of drawPixel (which logs and returns) but without
+  // the log spam if the caller intentionally passes margin-overlapping
+  // rects.
+  if (pMaxX < 0 || pMinX >= panelWidth || pMaxY < 0 || pMinY >= panelHeight) return;
+  if (pMinX < 0) pMinX = 0;
+  if (pMaxX >= panelWidth) pMaxX = panelWidth - 1;
+  if (pMinY < 0) pMinY = 0;
+  if (pMaxY >= panelHeight) pMaxY = panelHeight - 1;
+
+  const int firstByte = pMinX / 8;
+  const int lastByte = pMaxX / 8;
+  const int leftBit = pMinX & 7;
+  const int rightBit = pMaxX & 7;
+
+  if (firstByte == lastByte) {
+    // Strip fits inside one byte per panel row. Build a single mask
+    // covering bits (7 - leftBit) .. (7 - rightBit) inclusive.
+    const uint8_t mask = static_cast<uint8_t>(static_cast<uint8_t>(0xFFu >> leftBit) &
+                                              static_cast<uint8_t>((0xFFu << (7 - rightBit)) & 0xFFu));
+    for (int py = pMinY; py <= pMaxY; py++) {
+      frameBuffer[static_cast<uint32_t>(py) * panelWidthBytes + firstByte] |= mask;
+    }
+    return;
+  }
+
+  // Multi-byte case: leading partial byte (OR), middle full bytes (memset
+  // 0xFF), trailing partial byte (OR).
+  const uint8_t leadingMask = static_cast<uint8_t>(0xFFu >> leftBit);
+  const uint8_t trailingMask = static_cast<uint8_t>((0xFFu << (7 - rightBit)) & 0xFFu);
+  const int middleStart = firstByte + 1;
+  const int middleCount = lastByte - middleStart;  // 0 when lastByte == firstByte + 1
+
+  for (int py = pMinY; py <= pMaxY; py++) {
+    const uint32_t rowStart = static_cast<uint32_t>(py) * panelWidthBytes;
+    frameBuffer[rowStart + firstByte] |= leadingMask;
+    if (middleCount > 0) {
+      memset(&frameBuffer[rowStart + middleStart], 0xFF, static_cast<size_t>(middleCount));
+    }
+    frameBuffer[rowStart + lastByte] |= trailingMask;
   }
 }
 
