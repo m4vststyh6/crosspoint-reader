@@ -105,6 +105,70 @@ static inline void rotateCoordinates(const GfxRenderer::Orientation orientation,
   }
 }
 
+// Output of screenRectToAlignedMemRect: a rectangle in panel-memory
+// coordinates whose x and width are guaranteed to be multiples of 8 (the
+// SDK's EInkDisplay::displayWindow alignment requirement). `valid == false`
+// means the input was empty or fully outside the panel.
+struct AlignedMemRect {
+  uint16_t x = 0;
+  uint16_t y = 0;
+  uint16_t w = 0;
+  uint16_t h = 0;
+  bool valid = false;
+};
+
+// Translate a screen-coordinate rectangle (the coordinate system used by
+// fillRect / drawText / the rest of the renderer's public API) into a
+// panel-memory rectangle suitable for direct framebuffer indexing and for the
+// SDK's EInkDisplay::displayWindow API. Output x and width are snapped
+// outward to multiples of 8 (left edge down, right edge up) and clamped to
+// panel bounds.
+//
+// Approach: rotate the screen rectangle's two opposite corners into memory
+// coordinates using rotateCoordinates(), take the bounding box of the
+// rotated corners (which naturally swaps width/height in Portrait /
+// PortraitInverted), then snap the x extent to byte boundaries.
+//
+// Precondition: panelWidth and panelHeight are multiples of 8 (true for the
+// 800x480 panel). The alignment math relies on this so clamping cannot
+// re-break alignment.
+static AlignedMemRect screenRectToAlignedMemRect(GfxRenderer::Orientation orientation, int sx, int sy, int sw, int sh,
+                                                 uint16_t panelWidth, uint16_t panelHeight) {
+  AlignedMemRect out;
+  if (sw <= 0 || sh <= 0) return out;
+
+  int x0, y0, x1, y1;
+  rotateCoordinates(orientation, sx, sy, &x0, &y0, panelWidth, panelHeight);
+  rotateCoordinates(orientation, sx + sw - 1, sy + sh - 1, &x1, &y1, panelWidth, panelHeight);
+
+  const int memXLo = std::min(x0, x1);
+  const int memYLo = std::min(y0, y1);
+  const int memXHi = std::max(x0, x1) + 1;  // exclusive upper bound
+  const int memYHi = std::max(y0, y1) + 1;
+
+  // Snap x outward to multiples of 8.
+  int alignedXLo = memXLo & ~0x7;        // round down
+  int alignedXHi = (memXHi + 7) & ~0x7;  // round up
+
+  // Clamp to panel bounds. Panel dims are multiples of 8 so this preserves
+  // alignment.
+  if (alignedXLo < 0) alignedXLo = 0;
+  if (alignedXHi > panelWidth) alignedXHi = panelWidth;
+  int clampedYLo = memYLo;
+  int clampedYHi = memYHi;
+  if (clampedYLo < 0) clampedYLo = 0;
+  if (clampedYHi > panelHeight) clampedYHi = panelHeight;
+
+  if (alignedXHi <= alignedXLo || clampedYHi <= clampedYLo) return out;
+
+  out.x = static_cast<uint16_t>(alignedXLo);
+  out.y = static_cast<uint16_t>(clampedYLo);
+  out.w = static_cast<uint16_t>(alignedXHi - alignedXLo);
+  out.h = static_cast<uint16_t>(clampedYHi - clampedYLo);
+  out.valid = true;
+  return out;
+}
+
 enum class TextRotation { None, Rotated90CW };
 
 // Shared glyph rendering logic for normal and rotated text.
@@ -957,68 +1021,46 @@ void GfxRenderer::displayBuffer(const HalDisplay::RefreshMode refreshMode) const
   display.displayBuffer(refreshMode, fadingFix);
 }
 
-size_t GfxRenderer::readFramebufferRegion(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
-                                          uint8_t* dst, size_t dstCapacity) const {
+size_t GfxRenderer::readFramebufferRegion(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint8_t* dst,
+                                          size_t dstCapacity) const {
   if (dst == nullptr || w == 0 || h == 0) return 0;
-  if (x + w > panelWidth || y + h > panelHeight) return 0;
 
-  const size_t dstRowBytes = (static_cast<size_t>(w) + 7) / 8;
-  const size_t needed      = dstRowBytes * h;
+  const AlignedMemRect mem = screenRectToAlignedMemRect(orientation, x, y, w, h, panelWidth, panelHeight);
+  if (!mem.valid) return 0;
+
+  const size_t rowBytes = mem.w / 8;  // exact: mem.w is a multiple of 8
+  const size_t needed = rowBytes * mem.h;
   if (needed > dstCapacity) return 0;
 
-  for (uint16_t row = 0; row < h; ++row) {
-    const uint8_t* srcRow = frameBuffer + (static_cast<uint32_t>(y + row) * panelWidthBytes);
-    uint8_t* dstRow       = dst + (static_cast<size_t>(row) * dstRowBytes);
-
-    // Copy w bits starting at source bit (x % 8) of byte (x / 8) into dst,
-    // left-aligned at dst bit 0 (MSB). Walk bit by bit; the region is small
-    // (typical word ~150 px wide) so the simpler version is preferred over
-    // a byte-aligned fast path.
-    for (uint16_t col = 0; col < w; ++col) {
-      const uint16_t srcX    = x + col;
-      const uint8_t  srcByte = srcRow[srcX / 8];
-      const uint8_t  srcBit  = (srcByte >> (7 - (srcX & 7))) & 0x1;
-      const uint8_t  dstMask = static_cast<uint8_t>(1u << (7 - (col & 7)));
-      uint8_t&       dstByte = dstRow[col / 8];
-      if (srcBit) {
-        dstByte |= dstMask;
-      } else {
-        dstByte &= static_cast<uint8_t>(~dstMask);
-      }
-    }
+  for (uint16_t row = 0; row < mem.h; ++row) {
+    const uint8_t* srcRow = frameBuffer + (static_cast<uint32_t>(mem.y + row) * panelWidthBytes) + (mem.x / 8);
+    uint8_t* dstRow = dst + (static_cast<size_t>(row) * rowBytes);
+    memcpy(dstRow, srcRow, rowBytes);
   }
   return needed;
 }
 
-void GfxRenderer::writeFramebufferRegion(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
-                                         const uint8_t* src) {
+void GfxRenderer::writeFramebufferRegion(uint16_t x, uint16_t y, uint16_t w, uint16_t h, const uint8_t* src) {
   if (src == nullptr || w == 0 || h == 0) return;
-  if (x + w > panelWidth || y + h > panelHeight) return;
 
-  const size_t srcRowBytes = (static_cast<size_t>(w) + 7) / 8;
+  const AlignedMemRect mem = screenRectToAlignedMemRect(orientation, x, y, w, h, panelWidth, panelHeight);
+  if (!mem.valid) return;
 
-  for (uint16_t row = 0; row < h; ++row) {
-    const uint8_t* srcRow = src + (static_cast<size_t>(row) * srcRowBytes);
-    uint8_t* dstRow       = frameBuffer + (static_cast<uint32_t>(y + row) * panelWidthBytes);
+  const size_t rowBytes = mem.w / 8;  // exact: mem.w is a multiple of 8
 
-    for (uint16_t col = 0; col < w; ++col) {
-      const uint16_t dstX    = x + col;
-      const uint8_t  srcMask = static_cast<uint8_t>(1u << (7 - (col & 7)));
-      const uint8_t  srcBit  = (srcRow[col / 8] & srcMask) ? 1u : 0u;
-      const uint8_t  dstMask = static_cast<uint8_t>(1u << (7 - (dstX & 7)));
-      uint8_t&       dstByte = dstRow[dstX / 8];
-      if (srcBit) {
-        dstByte |= dstMask;
-      } else {
-        dstByte &= static_cast<uint8_t>(~dstMask);
-      }
-    }
+  for (uint16_t row = 0; row < mem.h; ++row) {
+    const uint8_t* srcRow = src + (static_cast<size_t>(row) * rowBytes);
+    uint8_t* dstRow = frameBuffer + (static_cast<uint32_t>(mem.y + row) * panelWidthBytes) + (mem.x / 8);
+    memcpy(dstRow, srcRow, rowBytes);
   }
 }
 
 bool GfxRenderer::displayBufferRegion(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
                                       HalDisplay::RefreshMode mode) const {
-  return display.displayWindow(x, y, w, h, mode, fadingFix);
+  if (w == 0 || h == 0) return true;
+  const AlignedMemRect mem = screenRectToAlignedMemRect(orientation, x, y, w, h, panelWidth, panelHeight);
+  if (!mem.valid) return false;
+  return display.displayWindow(mem.x, mem.y, mem.w, mem.h, mode, fadingFix);
 }
 
 std::string GfxRenderer::truncatedText(const int fontId, const char* text, const int maxWidth,

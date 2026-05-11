@@ -130,14 +130,27 @@ class WordSelectNavigator {
   //   - the snapshot capture is rejected by the renderer (e.g. out of bounds)
   //
   // Mutates internal snapshot state, so this method is non-const.
-  std::optional<Rect> renderHighlightDifferential(GfxRenderer& renderer, int lineHeight,
-                                                  int prevWordIdx, int currWordIdx);
+  std::optional<Rect> renderHighlightDifferential(GfxRenderer& renderer, int lineHeight, int prevWordIdx,
+                                                  int currWordIdx);
 
   // Pixel snapshot for one rectangular framebuffer region. Stack-resident buffer
   // (no heap). Used by the differential-repaint path (renderHighlightDifferential,
   // added in a follow-up task) to capture pixels under a highlight before it is
   // drawn, so a later cursor move can restore them and wipe the highlight without
   // re-rendering the page.
+  //
+  // Safety: the renderer byte-aligns the captured rectangle along the
+  // panel-memory x-axis, expanding the captured region by up to 7 pixels per
+  // side along that axis. In Landscape orientations this is the screen
+  // horizontal axis (extra pixels on the left/right of the highlight); in
+  // Portrait orientations the memory x-axis is the screen vertical axis, so
+  // the extra pixels sit above and below the highlight in screen space.
+  // restore() pastes those back unchanged, which is correct only as long as
+  // nothing else writes to the framebuffer between capture() and restore().
+  // In word-select that holds: the page is drawn once on entry and the only
+  // other framebuffer writer is the highlight itself. Adding a path that
+  // draws over those neighboring pixels (e.g. an overlay layered above this
+  // one) would invalidate that assumption.
   //
   // Sizing: 4096 bytes covers a worst-case ~800 x 40 px region (e.g., a row-spanning
   // multi-select highlight in single-row mode). When the requested region exceeds

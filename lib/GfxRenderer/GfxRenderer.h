@@ -106,22 +106,34 @@ class GfxRenderer {
   int getScreenWidth() const;
   int getScreenHeight() const;
   void displayBuffer(HalDisplay::RefreshMode refreshMode = HalDisplay::FAST_REFRESH) const;
-  // Copy a rectangle of the 1-bpp framebuffer into 'dst', packed MSB-first with
-  // (w + 7) / 8 bytes per row, x-aligned to 0 in 'dst'. Handles sub-byte source x
-  // alignment via shift-and-mask. Returns bytes written, or 0 if dstCapacity is
-  // insufficient or any argument is invalid.
-  size_t readFramebufferRegion(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
-                               uint8_t* dst, size_t dstCapacity) const;
+  // Read a rectangular region of the 1-bpp framebuffer into 'dst'. Inputs are
+  // SCREEN coordinates (the same coordinate system fillRect / drawText use).
+  // Internally the rectangle is rotated into panel-memory coordinates and
+  // snapped outward to byte boundaries, so the bytes actually read can cover
+  // up to one extra byte per row vs. the requested screen width. Output is
+  // packed MSB-first with (alignedMemoryWidth / 8) bytes per row.
+  // Returns the bytes written, or 0 if dstCapacity is insufficient or the
+  // rectangle is empty / fully out of bounds.
+  //
+  // Symmetric with writeFramebufferRegion: passing the SAME screen rectangle
+  // to writeFramebufferRegion will restore exactly the pixels this read.
+  size_t readFramebufferRegion(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint8_t* dst, size_t dstCapacity) const;
 
-  // Copy 'src' (packed MSB-first, (w + 7) / 8 bytes per row, x-aligned to 0) back
-  // into the rectangle (x,y,w,h) of the framebuffer. 'src' must have been produced
-  // by readFramebufferRegion with the same w,h.
-  void writeFramebufferRegion(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
-                              const uint8_t* src);
+  // Restore a rectangular region of the framebuffer previously captured by
+  // readFramebufferRegion using the SAME SCREEN rectangle. Inputs are SCREEN
+  // coordinates; src must hold exactly the bytes returned by
+  // readFramebufferRegion for the same screen rect (same row layout, same
+  // total length). No-op if the rectangle is empty or fully out of bounds.
+  void writeFramebufferRegion(uint16_t x, uint16_t y, uint16_t w, uint16_t h, const uint8_t* src);
 
-  // Push only the rectangle (x,y,w,h) to the panel. Falls back to full refresh
-  // inside HalDisplay::displayWindow if the rectangle is large enough to make the
-  // windowed protocol unhelpful. Returns true on success.
+  // Push only a rectangular region to the panel. Inputs are SCREEN
+  // coordinates; the function rotates and byte-aligns to satisfy the SDK's
+  // EInkDisplay::displayWindow requirement that x and width be multiples of
+  // 8 in panel-memory coordinates. When the resulting aligned region covers
+  // more than ~75% of the panel, HalDisplay::displayWindow falls back to a
+  // full refresh with the requested mode. Returns true on success or when
+  // the screen rectangle is empty (no-op); returns false if the rectangle
+  // is fully out of bounds.
   bool displayBufferRegion(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
                            HalDisplay::RefreshMode mode = HalDisplay::FAST_REFRESH) const;
   void invertScreen() const;

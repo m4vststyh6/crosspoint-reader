@@ -242,16 +242,15 @@ bool WordSelectNavigator::HighlightSnapshot::capture(uint16_t x, uint16_t y, uin
     fallback_ = false;  // empty rect is benign; caller decides what to do
     return false;
   }
-  const size_t needed = (static_cast<size_t>(w) + 7) / 8 * h;
-  if (needed > MAX_SNAPSHOT_BYTES) {
-    bytes_ = 0;
-    fallback_ = true;
-    return false;
-  }
+  // The renderer translates (x, y, w, h) from screen to byte-aligned memory
+  // coords and writes that many bytes; it returns 0 on capacity overflow,
+  // out-of-bounds, or rejection. We do NOT pre-check capacity here because the
+  // aligned-memory size differs from the naive screen-coord size, and only
+  // the renderer knows the exact figure.
   const size_t written = renderer.readFramebufferRegion(x, y, w, h, buf_, MAX_SNAPSHOT_BYTES);
   if (written == 0) {
     bytes_ = 0;
-    fallback_ = true;  // out of bounds or rejected by renderer
+    fallback_ = true;  // overflow, out of bounds, or rejected by renderer
     return false;
   }
   x_ = x;
@@ -287,8 +286,7 @@ void WordSelectNavigator::renderHighlight(const GfxRenderer& renderer, int lineH
   }
 }
 
-void WordSelectNavigator::drawSingleHighlight(const GfxRenderer& renderer, int lineHeight,
-                                              int wordIndex) const {
+void WordSelectNavigator::drawSingleHighlight(const GfxRenderer& renderer, int lineHeight, int wordIndex) const {
   const auto* w = getWordAt(wordIndex);
   if (!w) return;
   renderer.fillRect(w->screenX - 2, w->screenY - 2, w->width + 4, lineHeight + 4, true);
@@ -298,8 +296,8 @@ void WordSelectNavigator::drawSingleHighlight(const GfxRenderer& renderer, int l
 WordSelectNavigator::Rect WordSelectNavigator::boundsForWord(int wordIndex, int lineHeight) const {
   const auto* w = getWordAt(wordIndex);
   if (!w) return Rect{};
-  return Rect{static_cast<int>(w->screenX) - 2, static_cast<int>(w->screenY) - 2,
-              static_cast<int>(w->width) + 4, lineHeight + 4};
+  return Rect{static_cast<int>(w->screenX) - 2, static_cast<int>(w->screenY) - 2, static_cast<int>(w->width) + 4,
+              lineHeight + 4};
 }
 
 WordSelectNavigator::Rect WordSelectNavigator::computeDirtyRect(int prevWordIdx, int currWordIdx,
@@ -316,8 +314,10 @@ WordSelectNavigator::Rect WordSelectNavigator::computeDirtyRect(int prevWordIdx,
   return Rect{x0, y0, x1 - x0, y1 - y0};
 }
 
-std::optional<WordSelectNavigator::Rect> WordSelectNavigator::renderHighlightDifferential(
-    GfxRenderer& renderer, int lineHeight, int prevWordIdx, int currWordIdx) {
+std::optional<WordSelectNavigator::Rect> WordSelectNavigator::renderHighlightDifferential(GfxRenderer& renderer,
+                                                                                          int lineHeight,
+                                                                                          int prevWordIdx,
+                                                                                          int currWordIdx) {
   // Fallback paths.
   if (inMultiSelectMode) return std::nullopt;
   const auto* curr = getWordAt(currWordIdx);
