@@ -45,8 +45,7 @@ class HalDisplay {
   // the panel uses its current waveform.
   //
   // Returns true on success.
-  bool displayWindow(uint16_t x, uint16_t y, uint16_t w, uint16_t h, RefreshMode mode,
-                     bool turnOffScreen = false);
+  bool displayWindow(uint16_t x, uint16_t y, uint16_t w, uint16_t h, RefreshMode mode, bool turnOffScreen = false);
 
   // Power management
   void deepSleep();
