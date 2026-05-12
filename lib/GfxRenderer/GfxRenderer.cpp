@@ -1120,14 +1120,6 @@ void GfxRenderer::writeFramebufferRegion(uint16_t x, uint16_t y, uint16_t w, uin
   }
 }
 
-bool GfxRenderer::displayBufferRegion(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
-                                      HalDisplay::RefreshMode mode) const {
-  if (w == 0 || h == 0) return true;
-  const AlignedMemRect mem = screenRectToAlignedMemRect(orientation, x, y, w, h, panelWidth, panelHeight);
-  if (!mem.valid) return false;
-  return display.displayWindow(mem.x, mem.y, mem.w, mem.h, mode, fadingFix);
-}
-
 std::string GfxRenderer::truncatedText(const int fontId, const char* text, const int maxWidth,
                                        const EpdFontFamily::Style style) const {
   if (!text || maxWidth <= 0) return "";

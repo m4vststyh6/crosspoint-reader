@@ -141,7 +141,14 @@ void DictionaryWordSelectActivity::extractWords(std::vector<WordSelectNavigator:
       const EpdFontFamily::Style firstStyle = (!styleList.empty()) ? styleList[0] : EpdFontFamily::REGULAR;
       const int16_t firstWidth = measureWordAdvanceX(renderer, SETTINGS.getReaderFontId(), wordList[0], firstStyle);
       const int16_t derivedGap = static_cast<int16_t>(xPosList[1] - xPosList[0] - firstWidth);
-      if (derivedGap > 0) lineGapWidth = derivedGap;
+      // When wordList[1] is a continuation (attached punctuation etc., ParsedText.cpp:537-544)
+      // the layout inserts no inter-word gap, so derivedGap collapses to the kerning offset
+      // (~1-3 px). Real gaps are always >= getSpaceAdvance(...), so a half-space threshold
+      // cleanly separates a real gap from a continuation kerning without needing Block to
+      // expose continuesVec. Without the threshold, an undersized lineGapWidth propagates as
+      // a per-word width overestimate (~4-6 px) — the highlight rectangle bleeds past the
+      // word into the inter-word space.
+      if (derivedGap > naturalSpaceWidth / 2) lineGapWidth = derivedGap;
     }
 
     auto wordIt = wordList.begin();
@@ -389,11 +396,10 @@ void DictionaryWordSelectActivity::render(RenderLock&&) {
     prewarmHighlightGlyphs(currIdx);
     auto dirty = navigator.renderHighlightDifferential(renderer, lineHeight, prevHighlightIdx_, currIdx);
     if (dirty.has_value()) {
-      // Differential framebuffer modifications (snapshot restore / capture / draw) are correct,
-      // but the SDK's "EXPERIMENTAL" displayWindow path produces alternating black→white
-      // transition failures on consecutive fast partial refreshes. Use the full displayBuffer
-      // here instead — we still save the expensive page->render call, which is the bulk of the
-      // pre-optimization cost.
+      // Push full panel — the SDK's windowed-refresh path produces alternating black→white
+      // transition failures on consecutive fast partial refreshes, so it's intentionally not
+      // wired up here. The savings come from skipping page->render, which dominates the
+      // pre-optimization cost; the full push at the end is a hardware floor (~444ms).
       renderer.displayBuffer(HalDisplay::FAST_REFRESH);
       prevHighlightIdx_ = currIdx;
       return;

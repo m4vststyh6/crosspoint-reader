@@ -126,16 +126,6 @@ class GfxRenderer {
   // total length). No-op if the rectangle is empty or fully out of bounds.
   void writeFramebufferRegion(uint16_t x, uint16_t y, uint16_t w, uint16_t h, const uint8_t* src);
 
-  // Push only a rectangular region to the panel. Inputs are SCREEN
-  // coordinates; the function rotates and byte-aligns to satisfy the SDK's
-  // EInkDisplay::displayWindow requirement that x and width be multiples of
-  // 8 in panel-memory coordinates. When the resulting aligned region covers
-  // more than ~75% of the panel, HalDisplay::displayWindow falls back to a
-  // full refresh with the requested mode. Returns true on success or when
-  // the screen rectangle is empty (no-op); returns false if the rectangle
-  // is fully out of bounds.
-  bool displayBufferRegion(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
-                           HalDisplay::RefreshMode mode = HalDisplay::FAST_REFRESH) const;
   void invertScreen() const;
   void clearScreen(uint8_t color = 0xFF) const;
   void getOrientedViewableTRBL(int* outTop, int* outRight, int* outBottom, int* outLeft) const;

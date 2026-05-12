@@ -121,10 +121,10 @@ class WordSelectNavigator {
 
   // Differential repaint: restore pixels under the previous highlight, snapshot
   // pixels under the new highlight, then draw the new highlight. The caller
-  // currently pushes via GfxRenderer::displayBuffer (full panel) because the
-  // SDK's experimental windowed-refresh path produces transition artifacts on
-  // consecutive fast partial refreshes; the returned dirty rect is computed
-  // anyway and kept for the day GfxRenderer::displayBufferRegion is reliable.
+  // pushes via GfxRenderer::displayBuffer (full panel) — the savings come from
+  // skipping page->render, not from a smaller push. The returned dirty rect is
+  // unused by current callers; only the optional's .has_value() distinguishes
+  // success from fallback.
   //
   // Returns std::nullopt when the caller must fall back to a full repaint:
   //   - the new highlight is too large for HighlightSnapshot's buffer

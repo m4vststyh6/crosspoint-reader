@@ -527,12 +527,9 @@ void DictionaryDefinitionActivity::render(RenderLock&&) {
       const int lineHeight = getLineHeight();
       auto dirty = navigator.renderHighlightDifferential(renderer, lineHeight, prevHighlightIdx_, currIdx);
       if (dirty.has_value()) {
-        // Use full displayBuffer for the push (matches DictionaryWordSelectActivity):
-        // the SDK's experimental windowed-refresh path produces alternating
-        // black->white transition failures on consecutive fast partial refreshes.
-        // The savings here come from skipping page->render, not from a smaller
-        // push. The dirty rect computed by renderHighlightDifferential is kept
-        // (the .has_value() check above) for the day the windowed path is reliable.
+        // Full panel push — matches DictionaryWordSelectActivity. Windowed refresh is not
+        // wired up because the SDK's experimental path produces alternating black→white
+        // failures on consecutive partial refreshes. Savings come from skipping page->render.
         renderer.displayBuffer(HalDisplay::FAST_REFRESH);
         prevHighlightIdx_ = currIdx;
         return;
