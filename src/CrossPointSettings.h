@@ -94,9 +94,8 @@ class CrossPointSettings {
   };
 
   // Side button layout options
-  // Default: Previous, Next
-  // Swapped: Next, Previous
-  enum SIDE_BUTTON_LAYOUT { PREV_NEXT = 0, NEXT_PREV = 1, SIDE_BUTTON_LAYOUT_COUNT };
+  // Default: Up = Previous, Down = Next
+  enum SIDE_BUTTON_LAYOUT { PREV_NEXT = 0, NEXT_PREV = 1, SIDE_BUTTONS_DISABLED = 2, SIDE_BUTTON_LAYOUT_COUNT };
 
   // Font family options (built-in fonts only; SD card fonts use sdFontFamilyName)
   enum FONT_FAMILY { NOTOSERIF = 0, NOTOSANS = 1, OPENDYSLEXIC = 2, FONT_FAMILY_COUNT };
@@ -132,11 +131,11 @@ class CrossPointSettings {
   // Auto-sleep timeout options (in minutes)
   enum SLEEP_TIMEOUT {
     SLEEP_1_MIN = 0,
-    SLEEP_5_MIN = 1,
-    SLEEP_10_MIN = 2,
-    SLEEP_15_MIN = 3,
-    SLEEP_30_MIN = 4,
-    SLEEP_3_MIN = 5,
+    SLEEP_3_MIN = 1,
+    SLEEP_5_MIN = 2,
+    SLEEP_10_MIN = 3,
+    SLEEP_15_MIN = 4,
+    SLEEP_30_MIN = 5,
     SLEEP_TIMEOUT_COUNT
   };
 
@@ -270,7 +269,11 @@ class CrossPointSettings {
   static constexpr uint8_t HIST_CAP_STEP = 25;
   static constexpr uint8_t HIST_CAP_DEFAULT = 100;
   uint8_t lookupHistoryCap = HIST_CAP_DEFAULT;
-  uint8_t holdToLookup = 0;
+  // Action triggered by holding Confirm in the reader.
+  // OFF: no action (default). BOOKMARK: add bookmark @ BOOKMARK_HOLD_MS (400ms).
+  // DICTIONARY: open word-select @ Dictionary::LONG_PRESS_MS (600ms, requires per-book dictionary).
+  enum HOLD_CONFIRM_ACTION : uint8_t { HOLD_CONFIRM_OFF = 0, HOLD_CONFIRM_BOOKMARK = 1, HOLD_CONFIRM_DICTIONARY = 2 };
+  uint8_t holdConfirmAction = HOLD_CONFIRM_OFF;
   // Tilt-based page turning (X3 only — requires QMI8658 IMU)
   uint8_t tiltPageTurn = TILT_OFF;
   // Language setting (Language enum index, default 0 = EN)
@@ -298,7 +301,7 @@ class CrossPointSettings {
   int getLookupHistoryCapValue() const { return lookupHistoryCap; }
 
   // If count_only is true, returns the number of settings items that would be written.
-  uint8_t writeSettings(FsFile& file, bool count_only = false) const;
+  uint8_t writeSettings(HalFile& file, bool count_only = false) const;
 
   bool saveToFile() const;
   bool loadFromFile();
