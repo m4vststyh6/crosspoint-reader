@@ -32,8 +32,8 @@ class EpubReaderActivity final : public Activity {
   bool pendingSyncSaveError = false;
   bool skipNextButtonCheck = false;  // Skip button processing for one frame after subactivity exit
   bool automaticPageTurnActive = false;
-  bool ignoreBackUntilRelease = false;     // Suppress Back bleed-through after dictionary chain exit
-  bool ignoreNextConfirmRelease = false;   // Suppress menu open after hold-Confirm gesture fires
+  bool ignoreBackUntilRelease = false;    // Suppress Back bleed-through after dictionary chain exit
+  bool ignoreNextConfirmRelease = false;  // Suppress menu open after hold-Confirm gesture fires
   bool showBookmarkMessage = false;
   // Tracks whether this book is currently removed from Recent Books by the
   // removeReadBooksFromRecents feature (set at End-of-Book, cleared if paged back in).

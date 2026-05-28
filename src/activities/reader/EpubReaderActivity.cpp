@@ -259,8 +259,7 @@ void EpubReaderActivity::loop() {
   // Dictionary uses 600 ms (Dictionary::LONG_PRESS_MS); Bookmark uses 400 ms (ReaderUtils::BOOKMARK_HOLD_MS).
   if (section && mappedInput.isPressed(MappedInputManager::Button::Confirm)) {
     if (SETTINGS.holdConfirmAction == CrossPointSettings::HOLD_CONFIRM_DICTIONARY &&
-        mappedInput.getHeldTime() >= Dictionary::LONG_PRESS_MS &&
-        Dictionary::exists(epub->getCachePath().c_str())) {
+        mappedInput.getHeldTime() >= Dictionary::LONG_PRESS_MS && Dictionary::exists(epub->getCachePath().c_str())) {
       ignoreNextConfirmRelease = true;
       openWordSelect(/*framebufferContainsPage=*/true);
       return;

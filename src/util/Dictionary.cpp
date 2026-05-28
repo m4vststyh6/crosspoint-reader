@@ -401,8 +401,8 @@ void Dictionary::resolveScanBounds(const char* csptPath, const char* oftPath, Ha
   }
 }
 
-void Dictionary::findPageBounds(HalFile& oft, HalFile& src, uint32_t srcFileSize, const char* target, uint32_t* startByte,
-                                uint32_t* endByte) {
+void Dictionary::findPageBounds(HalFile& oft, HalFile& src, uint32_t srcFileSize, const char* target,
+                                uint32_t* startByte, uint32_t* endByte) {
   const uint32_t oftFileSize = static_cast<uint32_t>(oft.fileSize());
   const uint32_t numEntries = (oftFileSize > OFT_HEADER_SIZE) ? (oftFileSize - OFT_HEADER_SIZE) / 4 : 0;
   const uint32_t numPages = numEntries + 1;  // page 0 is implicit (starts at byte 0 in src)
