@@ -98,6 +98,9 @@ class DictionaryDefinitionActivity final : public Activity {
   // Line sink injected into DictLayout::wrapSpans: keeps collectTargetPage_'s
   // lines, counts the rest. ctx is `this`.
   static void collectLineSink(void* ctx, DictLayout::LayoutLine&& line);
+  // Span sink bridge: forwards each streamed span from DictHtmlRenderer into the
+  // DictLayout::Wrapper. ctx is the Wrapper*.
+  static void feedSpanToWrapper(void* ctx, const StyledSpan& span);
   bool handleLongPressExitAll(bool enabled);
   int getLineHeight() const;
 };

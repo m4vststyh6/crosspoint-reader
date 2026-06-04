@@ -135,17 +135,25 @@ void DictionaryDefinitionActivity::wrapHtml() {
   const int indentStep = renderer.getTextWidth(SETTINGS.getDefinitionFontId(), "   ");
   const int bulletWidth = renderer.getTextWidth(SETTINGS.getDefinitionFontId(), kBullet);
 
+  // Fully streamed: the renderer delivers spans one at a time to the Wrapper, the
+  // Wrapper emits completed lines to the page collector, and the collector keeps
+  // only the current page. Neither the whole-definition span/textBuf (renderer)
+  // nor all pages of lines (here) is ever materialized.
+  DictLayout::Measurer measure{this, &DictionaryDefinitionActivity::measureWidthAdapter};
+  DictLayout::LineSink lineSink{this, &DictionaryDefinitionActivity::collectLineSink};
+  DictLayout::Wrapper wrapper(DictLayout::WrapMetrics{maxWidth, indentStep, bulletWidth}, measure, lineSink);
+
   // Heap-allocate the renderer — internal buffers are too large for the stack.
-  // Stream from .dict file — the full definition is never held in RAM.
   auto htmlRenderer = std::make_unique<DictHtmlRenderer>();
   const std::string dictPath = foundLocation.folderPath + ".dict";
-  const auto& spans = htmlRenderer->renderFromFile(dictPath.c_str(), foundLocation.offset, foundLocation.size);
+  const DictHtmlRenderer::SpanSink spanSink{&wrapper, &DictionaryDefinitionActivity::feedSpanToWrapper};
+  htmlRenderer->renderFromFileStreaming(dictPath.c_str(), foundLocation.offset, foundLocation.size, spanSink);
+  wrapper.finish();
+  // htmlRenderer freed here; only the kept page's span text was ever copied into layoutLines
+}
 
-  // Wrap via the pure layout module (font metrics injected through measureWidthAdapter).
-  DictLayout::Measurer measure{this, &DictionaryDefinitionActivity::measureWidthAdapter};
-  DictLayout::LineSink sink{this, &DictionaryDefinitionActivity::collectLineSink};
-  DictLayout::wrapSpans(spans, DictLayout::WrapMetrics{maxWidth, indentStep, bulletWidth}, measure, sink);
-  // htmlRenderer freed here; the kept page's span text has been copied into layoutLines
+void DictionaryDefinitionActivity::feedSpanToWrapper(void* ctx, const StyledSpan& span) {
+  static_cast<DictLayout::Wrapper*>(ctx)->onSpan(span);
 }
 
 // ---------------------------------------------------------------------------

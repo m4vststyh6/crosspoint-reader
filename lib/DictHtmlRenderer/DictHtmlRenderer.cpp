@@ -116,6 +116,7 @@ void DictHtmlRenderer::reset() {
   fmt = FormatState{};
   newlinePending = false;
   listItemPending = false;
+  spanSink_ = SpanSink{};  // batch mode by default; streaming sets it after reset()
 
   if (parser) {
     XML_ParserFree(parser);
@@ -136,7 +137,6 @@ void DictHtmlRenderer::pushSpan() {
   if (pendingText.empty()) return;
 
   StyledSpan span;
-  span.textOffset = static_cast<uint32_t>(textBuf.size());
   span.bold = fmt.bold;
   span.italic = fmt.italic;
   span.underline = fmt.underline;
@@ -145,17 +145,28 @@ void DictHtmlRenderer::pushSpan() {
   span.newlineBefore = newlinePending;
   span.isListItem = listItemPending;
 
-  if (textBuf.size() + pendingText.size() + 1 > textBuf.capacity()) {
-    textBuf.reserve(textBuf.capacity() + 512);
+  if (spanSink_.fn) {
+    // Streaming: deliver the span immediately. text points into pendingText and
+    // is valid only for the duration of the call — the sink copies it. textBuf
+    // and the spans vector are never grown.
+    span.text = pendingText.c_str();
+    span.textOffset = 0;
+    spanSink_(span);
+  } else {
+    // Batch: accumulate text into textBuf; span.text pointers fixed up after the
+    // full parse (textBuf reallocates as it grows).
+    span.textOffset = static_cast<uint32_t>(textBuf.size());
+    if (textBuf.size() + pendingText.size() + 1 > textBuf.capacity()) {
+      textBuf.reserve(textBuf.capacity() + 512);
+    }
+    textBuf.insert(textBuf.end(), pendingText.begin(), pendingText.end());
+    textBuf.push_back('\0');
+    spans.push_back(span);
   }
-  textBuf.insert(textBuf.end(), pendingText.begin(), pendingText.end());
-  textBuf.push_back('\0');
 
   pendingText.clear();
   newlinePending = false;
   listItemPending = false;
-
-  spans.push_back(span);
 }
 
 void DictHtmlRenderer::emitText(const char* s, int len) {
@@ -626,22 +637,7 @@ void DictHtmlRenderer::feedEntityResolved(const char* buf, int len, bool isLast,
 // Stream-render from .dict file (definition never held in RAM)
 // ---------------------------------------------------------------------------
 
-const std::vector<StyledSpan>& DictHtmlRenderer::renderFromFile(const char* dictPath, uint32_t offset, uint32_t size) {
-  reset();
-
-  if (!parser) {
-    parseError = true;
-    return spans;
-  }
-
-  HalFile file;
-  if (!Storage.openFileForRead("DICT", dictPath, file)) {
-    LOG_ERR("DHTML", "Failed to open: %s", dictPath);
-    parseError = true;
-    return spans;
-  }
-  file.seekSet(offset);
-
+void DictHtmlRenderer::parseOpenFile(HalFile& file, uint32_t size) {
   XML_SetUserData(parser, this);
   XML_SetElementHandler(parser, onStart, onEnd);
   XML_SetCharacterDataHandler(parser, onText);
@@ -689,6 +685,25 @@ const std::vector<StyledSpan>& DictHtmlRenderer::renderFromFile(const char* dict
   }
 
   flushPending();
+}
+
+const std::vector<StyledSpan>& DictHtmlRenderer::renderFromFile(const char* dictPath, uint32_t offset, uint32_t size) {
+  reset();
+
+  if (!parser) {
+    parseError = true;
+    return spans;
+  }
+
+  HalFile file;
+  if (!Storage.openFileForRead("DICT", dictPath, file)) {
+    LOG_ERR("DHTML", "Failed to open: %s", dictPath);
+    parseError = true;
+    return spans;
+  }
+  file.seekSet(offset);
+
+  parseOpenFile(file, size);
   file.close();
 
   for (auto& s : spans) {
@@ -696,6 +711,33 @@ const std::vector<StyledSpan>& DictHtmlRenderer::renderFromFile(const char* dict
   }
 
   return spans;
+}
+
+bool DictHtmlRenderer::renderFromFileStreaming(const char* dictPath, uint32_t offset, uint32_t size,
+                                               const SpanSink& sink) {
+  reset();
+  spanSink_ = sink;  // install for this parse; pushSpan() now streams to the sink
+
+  if (!parser) {
+    parseError = true;
+    spanSink_ = SpanSink{};
+    return false;
+  }
+
+  HalFile file;
+  if (!Storage.openFileForRead("DICT", dictPath, file)) {
+    LOG_ERR("DHTML", "Failed to open: %s", dictPath);
+    parseError = true;
+    spanSink_ = SpanSink{};
+    return false;
+  }
+  file.seekSet(offset);
+
+  parseOpenFile(file, size);
+  file.close();
+
+  spanSink_ = SpanSink{};  // streaming never materializes spans/textBuf — nothing to fix up
+  return !parseError;
 }
 
 // ---------------------------------------------------------------------------

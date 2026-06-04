@@ -7,6 +7,8 @@
 #include <string>
 #include <vector>
 
+#include "IpaUtils.h"  // IpaTextSpan (Wrapper scratch member)
+
 // Pure, renderer-independent layout of dictionary HTML spans into wrapped
 // display lines. Width measurement is injected via Measurer, so this module has
 // no dependency on GfxRenderer / CrossPointSettings / font IDs. That decoupling
@@ -54,6 +56,36 @@ struct LineSink {
   void* ctx = nullptr;
   void (*fn)(void* ctx, LayoutLine&& line) = nullptr;
   void operator()(LayoutLine&& line) const { fn(ctx, std::move(line)); }
+};
+
+// Stateful word-wrapper. Spans are fed one at a time via onSpan() (so the source
+// — the HTML renderer — can stream them and never materialize the whole
+// definition), and each completed line is emitted to the LineSink as it is
+// finished. finish() flushes the trailing line. Equivalent to the one-shot
+// wrapSpans(); that overload is a thin loop over this class.
+class Wrapper {
+ public:
+  Wrapper(const WrapMetrics& metrics, const Measurer& measure, const LineSink& sink);
+
+  void onSpan(const StyledSpan& span);  // process one span; emit completed lines to the sink
+  void finish();                        // flush the trailing in-progress line
+
+ private:
+  int getMixedWidth(const char* text, EpdFontFamily::Style style);
+  void flushLine();
+  void startLine(uint8_t indent, bool listItem);
+  void appendToLine(const std::string& text, EpdFontFamily::Style style, bool isIpa, int width);
+  void appendMixed(const char* text, EpdFontFamily::Style style);
+  void breakToken(const std::string& tok, EpdFontFamily::Style style, uint8_t indentLevel);
+
+  const int maxWidth_;
+  const int indentStep_;
+  const int bulletWidth_;
+  Measurer measure_;
+  LineSink sink_;
+  LayoutLine currentLine_;
+  int currentX_ = 0;
+  std::vector<IpaTextSpan> ipaRuns_;  // reused scratch for IPA run splitting
 };
 
 // Streaming layout: word-wrap every span and emit each completed line to `sink`
