@@ -190,12 +190,19 @@ Tests the `DictHtmlRenderer` library on the host (no device required).
 bash test/dict-html-renderer/run.sh
 ```
 
-Requires `gcc` and `g++`. Runs 14 tests:
-- 7 dictionary entry tests against `html-definitions` dictionary
-- 5 boundary condition tests (malformed XML, large input, deep nesting, control chars)
-- 2 IPA utility unit tests (isIpaCodepoint, splitIpaRuns)
+Requires `gcc` and `g++`. The build supplies host stubs for the device-only
+`HalStorage.h` / `Logging.h` (see `test/dict-html-renderer/stubs/`) so the
+file-based render paths compile and run off-device. Runs 15 tests:
+- 7 dictionary entry tests against the `html-definitions` dictionary
+- 1 streaming-parity test (`renderFromFileStreaming` vs batch `render`, all entries)
+- 5 boundary condition tests (malformed XML, large input, long paragraph, deep nesting, control chars)
+- 2 IPA utility unit tests (`isIpaCodepoint`, `splitIpaRuns`, incl. added codepoints + combining marks)
 
 See `test/dict-html-renderer/README.md` for details.
+
+Two further host litmuses cover the layout side (no device required):
+- `bash test/dict-layout/run.sh` — `DictLayout` wrap/pagination + page-collector vs a reference oracle.
+- `bash test/lookup-chain/run.sh` — `LookupChain` back-stack invariants (distance-from-newest, non-contiguous subset, eviction).
 
 ## Standalone CLI Tools
 
