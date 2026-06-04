@@ -82,6 +82,12 @@ class DictionaryDefinitionActivity final : public Activity {
   int linesPerPage = 0;
   int totalPages = 0;
 
+  // Reused across page turns (3.1-A): avoids re-allocating the renderer object +
+  // its parser/buffers on every loadPage. A value member is fine — the activity
+  // is heap-allocated, so this lives on the heap. reset()+re-feed each turn (NOT
+  // kept alive mid-parse; that is the won't-fixed 2c).
+  DictHtmlRenderer htmlRenderer_;
+
   // Page-collector state (used by collectLineSink during a wrap pass): keep only
   // collectTargetPage_'s lines into layoutLines, counting all lines produced.
   int collectTargetPage_ = 0;

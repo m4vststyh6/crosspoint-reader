@@ -118,11 +118,15 @@ void DictHtmlRenderer::reset() {
   listItemPending = false;
   spanSink_ = SpanSink{};  // batch mode by default; streaming sets it after reset()
 
+  // Reuse the existing parser (cheap reset) rather than free+create on every
+  // render. Only the first call (null parser) allocates. XML_ParserReset clears
+  // handlers + user data; callers re-apply them after reset (parseOpenFile,
+  // render). Pays off because the renderer is now a reused activity member.
   if (parser) {
-    XML_ParserFree(parser);
-    parser = nullptr;
+    XML_ParserReset(parser, nullptr);
+  } else {
+    parser = XML_ParserCreate(nullptr);
   }
-  parser = XML_ParserCreate(nullptr);
 
 #ifdef DICT_HTML_RENDERER_TRACK_UNKNOWN
   unknownTagCount = 0;

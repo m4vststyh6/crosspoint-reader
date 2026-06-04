@@ -165,13 +165,14 @@ void DictionaryDefinitionActivity::wrapHtml() {
   DictLayout::LineSink lineSink{this, &DictionaryDefinitionActivity::collectLineSink};
   DictLayout::Wrapper wrapper(DictLayout::WrapMetrics{maxWidth, indentStep, bulletWidth}, measure, lineSink);
 
-  // Heap-allocate the renderer — internal buffers are too large for the stack.
-  auto htmlRenderer = std::make_unique<DictHtmlRenderer>();
+  // Renderer is a reused activity member (3.1-A): renderFromFileStreaming resets
+  // it each call (XML_ParserReset, not free+create), so no per-turn object/parser
+  // churn. Streaming means it never materializes the whole-definition buffers.
   const std::string dictPath = foundLocation.folderPath + ".dict";
   const DictHtmlRenderer::SpanSink spanSink{&wrapper, &DictionaryDefinitionActivity::feedSpanToWrapper};
-  htmlRenderer->renderFromFileStreaming(dictPath.c_str(), foundLocation.offset, foundLocation.size, spanSink);
+  htmlRenderer_.renderFromFileStreaming(dictPath.c_str(), foundLocation.offset, foundLocation.size, spanSink);
   wrapper.finish();
-  // htmlRenderer freed here; only the kept page's span text was ever copied into layoutLines
+  // Only the kept page's span text was ever copied into layoutLines.
 }
 
 void DictionaryDefinitionActivity::feedSpanToWrapper(void* ctx, const StyledSpan& span) {
