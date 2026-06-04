@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "../Activity.h"
+#include "util/DictLayout.h"
 #include "util/DictionaryLookupController.h"
 #include "util/IpaUtils.h"
 #include "util/LookupHistory.h"
@@ -51,21 +52,7 @@ class DictionaryDefinitionActivity final : public Activity {
   std::vector<std::string> chainWords;  // previous headwords for back-nav
   bool chainBackNavInProgress = false;
 
-  // A single styled run within a display line.
-  struct LayoutSegment {
-    std::string text;
-    EpdFontFamily::Style style = EpdFontFamily::REGULAR;
-    bool isIpa = false;  // true → render with IPA_FONT_ID
-  };
-
-  // One wrapped display line, containing one or more styled segments.
-  struct LayoutLine {
-    std::vector<LayoutSegment> segments;
-    uint8_t indentLevel = 0;
-    bool isListItem = false;
-  };
-
-  std::vector<LayoutLine> layoutLines;
+  std::vector<DictLayout::LayoutLine> layoutLines;
   int currentPage = 0;
   int linesPerPage = 0;
   int totalPages = 0;
@@ -96,6 +83,8 @@ class DictionaryDefinitionActivity final : public Activity {
   void wrapPlain();
   void extractWordsFromLayout();
   int getMixedWidth(std::vector<IpaTextSpan>& ipaRuns, const char* text, EpdFontFamily::Style style);
+  // Width measurement adapter injected into DictLayout::wrapSpans. ctx is `this`.
+  static int measureWidthAdapter(void* ctx, const char* text, EpdFontFamily::Style style, bool isIpa);
   bool handleLongPressExitAll(bool enabled);
   int getLineHeight() const;
 };

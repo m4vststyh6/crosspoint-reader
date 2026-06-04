@@ -101,12 +101,16 @@ int DictionaryDefinitionActivity::getMixedWidth(std::vector<IpaTextSpan>& ipaRun
 // HTML path: run DictHtmlRenderer, lay out spans into LayoutLines
 // ---------------------------------------------------------------------------
 
-void DictionaryDefinitionActivity::wrapHtml() {
-  std::vector<IpaTextSpan> ipaRuns;
-  const int screenWidth = renderer.getScreenWidth();
-  const int maxWidth = screenWidth - leftPadding - rightPadding;
+int DictionaryDefinitionActivity::measureWidthAdapter(void* ctx, const char* text, EpdFontFamily::Style style,
+                                                      bool isIpa) {
+  auto* self = static_cast<DictionaryDefinitionActivity*>(ctx);
+  const int fontId = isIpa ? IPA_FONT_ID : SETTINGS.getDefinitionFontId();
+  return self->renderer.getTextWidth(fontId, text, style);
+}
 
-  // Indent step: 3 spaces worth of pixels at regular weight
+void DictionaryDefinitionActivity::wrapHtml() {
+  const int maxWidth = renderer.getScreenWidth() - leftPadding - rightPadding;
+  // Indent step: 3 spaces worth of pixels at regular weight.
   const int indentStep = renderer.getTextWidth(SETTINGS.getDefinitionFontId(), "   ");
   const int bulletWidth = renderer.getTextWidth(SETTINGS.getDefinitionFontId(), kBullet);
 
@@ -116,133 +120,9 @@ void DictionaryDefinitionActivity::wrapHtml() {
   const std::string dictPath = foundLocation.folderPath + ".dict";
   const auto& spans = htmlRenderer->renderFromFile(dictPath.c_str(), foundLocation.offset, foundLocation.size);
 
-  LayoutLine currentLine;
-  int currentX = 0;
-
-  auto flushLine = [&]() {
-    if (!currentLine.segments.empty()) {
-      layoutLines.push_back(std::move(currentLine));
-      currentLine = LayoutLine{};
-    }
-  };
-
-  auto startLine = [&](uint8_t indent, bool listItem) {
-    currentLine.indentLevel = indent;
-    currentLine.isListItem = listItem;
-    currentX = indent * indentStep + (listItem ? bulletWidth : 0);
-  };
-
-  auto appendToLine = [&](const std::string& text, EpdFontFamily::Style style, bool isIpa, int width) {
-    if (!currentLine.segments.empty() && currentLine.segments.back().style == style &&
-        currentLine.segments.back().isIpa == isIpa) {
-      currentLine.segments.back().text += text;
-    } else {
-      currentLine.segments.push_back({text, style, isIpa});
-    }
-    currentX += width;
-  };
-
-  auto appendMixed = [&](const char* text, EpdFontFamily::Style style) {
-    ipaRuns.clear();
-    splitIpaRuns(text, ipaRuns);
-    for (const auto& run : ipaRuns) {
-      const int fontId = run.isIpa ? IPA_FONT_ID : SETTINGS.getDefinitionFontId();
-      appendToLine(run.text, style, run.isIpa, renderer.getTextWidth(fontId, run.text.c_str(), style));
-    }
-  };
-
-  // Break a single token at codepoint boundaries when it is wider than the available line width.
-  auto breakToken = [&](const std::string& tok, EpdFontFamily::Style style, uint8_t indentLevel) {
-    const auto* bp = reinterpret_cast<const uint8_t*>(tok.c_str());
-    std::string pending;
-    int pendingWidth = 0;
-    bool pendingIsIpa = false;
-    uint32_t cp;
-    while ((cp = utf8NextCodepoint(&bp))) {
-      const bool combining = utf8IsCombiningMark(cp);
-      const bool cpIsIpa = combining ? pendingIsIpa : isIpaCodepoint(cp);
-      if (pending.empty()) pendingIsIpa = cpIsIpa;
-      char buf[4];
-      const int cpLen = utf8EncodeCodepoint(cp, buf);
-      std::string cpStr(buf, cpLen);
-      const int fontId = cpIsIpa ? IPA_FONT_ID : SETTINGS.getDefinitionFontId();
-      const int cpWidth = renderer.getTextWidth(fontId, cpStr.c_str(), style);
-      if (!pending.empty() && currentX + pendingWidth + cpWidth > maxWidth) {
-        appendMixed(pending.c_str(), style);
-        flushLine();
-        startLine(indentLevel, false);
-        pending.clear();
-        pendingWidth = 0;
-        pendingIsIpa = cpIsIpa;
-      }
-      pending += cpStr;
-      pendingWidth += cpWidth;
-    }
-    if (!pending.empty()) appendMixed(pending.c_str(), style);
-  };
-
-  startLine(0, false);
-
-  for (const auto& span : spans) {
-    if (!span.text || span.text[0] == '\0') continue;
-
-    EpdFontFamily::Style style;
-    if (span.bold && span.italic) {
-      style = EpdFontFamily::BOLD_ITALIC;
-    } else if (span.bold) {
-      style = EpdFontFamily::BOLD;
-    } else if (span.italic) {
-      style = EpdFontFamily::ITALIC;
-    } else {
-      style = EpdFontFamily::REGULAR;
-    }
-    if (span.underline) style = static_cast<EpdFontFamily::Style>(style | EpdFontFamily::UNDERLINE);
-
-    if (span.newlineBefore) {
-      flushLine();
-      startLine(span.indentLevel, span.isListItem);
-    }
-
-    const int spanWidth = getMixedWidth(ipaRuns, span.text, style);
-    if (currentX + spanWidth <= maxWidth) {
-      // Fast path: entire span fits on the current line.
-      appendMixed(span.text, style);
-    } else {
-      // Word-wrap within the span.
-      const char* p = span.text;
-      while (*p) {
-        bool hadSpace = false;
-        while (*p == ' ') {
-          hadSpace = true;
-          ++p;
-        }
-        if (!*p) break;
-
-        const char* tokStart = p;
-        while (*p && *p != ' ') ++p;
-        std::string tok(tokStart, p - tokStart);
-
-        bool lineIsEmpty = currentLine.segments.empty();
-        std::string candidate = (!lineIsEmpty && hadSpace) ? " " + tok : tok;
-        int candidateWidth = getMixedWidth(ipaRuns, candidate.c_str(), style);
-
-        if (currentX + candidateWidth > maxWidth && !lineIsEmpty) {
-          flushLine();
-          startLine(span.indentLevel, false);
-          candidate = tok;
-          candidateWidth = getMixedWidth(ipaRuns, tok.c_str(), style);
-        }
-
-        if (currentX + candidateWidth > maxWidth) {
-          breakToken(candidate, style, span.indentLevel);
-        } else {
-          appendMixed(candidate.c_str(), style);
-        }
-      }
-    }
-  }
-
-  flushLine();
+  // Wrap via the pure layout module (font metrics injected through measureWidthAdapter).
+  DictLayout::Measurer measure{this, &DictionaryDefinitionActivity::measureWidthAdapter};
+  DictLayout::wrapSpans(spans, DictLayout::WrapMetrics{maxWidth, indentStep, bulletWidth}, measure, layoutLines);
   // htmlRenderer freed here; span text has been copied into layoutLines
 }
 
@@ -262,7 +142,7 @@ void DictionaryDefinitionActivity::wrapPlain() {
 
   auto flushLine = [&]() {
     if (currentLineText.empty()) return;
-    LayoutLine line;
+    DictLayout::LayoutLine line;
     ipaRuns.clear();
     splitIpaRuns(currentLineText.c_str(), ipaRuns);
     for (const auto& run : ipaRuns) {
@@ -344,7 +224,7 @@ void DictionaryDefinitionActivity::extractWordsFromLayout() {
   const int startLineIdx = currentPage * linesPerPage;
   const int lineHeight = getLineHeight();  // cached for loop
   for (int i = 0; i < linesPerPage && (startLineIdx + i) < static_cast<int>(layoutLines.size()); i++) {
-    const LayoutLine& line = layoutLines[startLineIdx + i];
+    const DictLayout::LayoutLine& line = layoutLines[startLineIdx + i];
     const int16_t lineY = static_cast<int16_t>(bodyStartY + i * lineHeight);
     int x = leftPadding + line.indentLevel * indentStep;
 
@@ -566,7 +446,7 @@ void DictionaryDefinitionActivity::render(RenderLock&&) {
   const int lineHeight = getLineHeight();  // cached for loop + renderHighlight
   auto renderBody = [&]() {
     for (int i = 0; i < linesPerPage && (startLine + i) < static_cast<int>(layoutLines.size()); i++) {
-      const LayoutLine& line = layoutLines[startLine + i];
+      const DictLayout::LayoutLine& line = layoutLines[startLine + i];
       const int y = bodyStartY + i * lineHeight;
       int x = leftPadding + line.indentLevel * indentStep;
 
