@@ -10,6 +10,7 @@
 #include "util/DictLayout.h"
 #include "util/DictionaryLookupController.h"
 #include "util/IpaUtils.h"
+#include "util/LookupChain.h"
 #include "util/LookupHistory.h"
 #include "util/WordSelectNavigator.h"
 
@@ -49,7 +50,11 @@ class DictionaryDefinitionActivity final : public Activity {
   bool recordHistory;
   std::string historyWord;
   LookupHistory::Status historyStatus;
-  std::vector<std::string> chainWords;  // previous headwords for back-nav
+  // Cross-definition back-navigation stack (compact: history-index + page per
+  // entry, not owned strings). pendingBack_ carries the popped entry from the
+  // Back keypress to the async FoundDefinition that completes the re-lookup.
+  LookupChain chain_;
+  LookupChain::Entry pendingBack_{};
   bool chainBackNavInProgress = false;
 
   // Resident page representation (Stage 2b-pool). Segments reference text by

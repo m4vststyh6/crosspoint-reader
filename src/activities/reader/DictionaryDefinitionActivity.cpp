@@ -31,6 +31,12 @@ void DictionaryDefinitionActivity::onEnter() {
   requestUpdate();
   // SD write overlaps the e-ink refresh kicked by requestUpdate() on the render task.
   LookupHistory::addWordIf(cachePath, historyWord, historyStatus, recordHistory);
+
+  // Seed the back-nav chain. The initial word is the newest history entry iff it
+  // was just logged (same condition addWordIf applies internally).
+  chain_.reset(SETTINGS.getLookupHistoryCapValue());
+  const bool initialLogged = recordHistory && !historyWord.empty() && !cachePath.empty();
+  chain_.setCurrentHistIndex(initialLogged ? 0 : -1);
 }
 
 void DictionaryDefinitionActivity::onExit() {
@@ -342,20 +348,28 @@ void DictionaryDefinitionActivity::loop() {
     switch (controller.handleInput()) {
       case DictionaryLookupController::LookupEvent::FoundDefinition: {
         const bool wasBackNav = chainBackNavInProgress;
+        const bool willLog = !wasBackNav && controller.getRecordHistory();
         if (!wasBackNav) {
-          chainWords.push_back(headword);
+          // Forward: push a back-entry for the word being left (current headword,
+          // on currentPage), referencing its history position.
+          chain_.onForward(static_cast<uint16_t>(currentPage), willLog);
         }
         chainBackNavInProgress = false;
         headword = controller.getFoundWord();
         foundLocation = controller.getFoundLocation();
-        wrapText();
-        currentPage = 0;
+        wrapText();  // resets currentPage to 0 and loads page 0
+        if (wasBackNav) {
+          // Re-derive the now-current word's history position and restore its page.
+          chain_.setCurrentHistIndex(pendingBack_.histIndex);
+          currentPage = (pendingBack_.page < totalPages) ? pendingBack_.page : (totalPages - 1);
+          if (currentPage < 0) currentPage = 0;
+          if (currentPage > 0) loadPage(currentPage);
+        }
         isWordSelectMode = false;
         requestUpdate();
-        // Chain-forward records; chain-back-nav (recordHistory=false) does not.
+        // Chain-forward records; chain-back-nav does not.
         LookupHistory::addWordIf(cachePath, controller.getLookupWord(),
-                                 DictionaryLookupController::toHistStatus(controller.getFoundStatus()),
-                                 !wasBackNav && controller.getRecordHistory());
+                                 DictionaryLookupController::toHistStatus(controller.getFoundStatus()), willLog);
         break;
       }
       case DictionaryLookupController::LookupEvent::NotFoundDismissedBack:
@@ -435,12 +449,16 @@ void DictionaryDefinitionActivity::loop() {
 
   if (mappedInput.wasReleased(MappedInputManager::Button::Back) &&
       (!showLookupButton || mappedInput.getHeldTime() < Dictionary::LONG_PRESS_MS)) {
-    if (!cachePath.empty() && !chainWords.empty()) {
-      std::string prevWord = chainWords.back();
-      chainWords.pop_back();
-      chainBackNavInProgress = true;
-      controller.startLookup(prevWord, false);
-      return;
+    if (!cachePath.empty() && !chain_.empty()) {
+      pendingBack_ = chain_.pop();
+      // Resolve the prior headword from the persisted history by distance-from-newest.
+      const auto hist = LookupHistory::load(cachePath);  // newest-first
+      if (pendingBack_.histIndex < hist.size()) {
+        chainBackNavInProgress = true;
+        controller.startLookup(hist[pendingBack_.histIndex].word, false);
+        return;
+      }
+      // Unresolvable (should not happen under the depth cap) — fall through to exit.
     }
     DictUtils::cancelAndFinish(*this);
     return;
