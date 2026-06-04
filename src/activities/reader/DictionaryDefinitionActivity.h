@@ -52,10 +52,17 @@ class DictionaryDefinitionActivity final : public Activity {
   std::vector<std::string> chainWords;  // previous headwords for back-nav
   bool chainBackNavInProgress = false;
 
+  // layoutLines holds ONLY the current page's lines (Stage 2a streaming). render
+  // and extractWordsFromLayout index it from 0; loadPage() refills it per turn.
   std::vector<DictLayout::LayoutLine> layoutLines;
   int currentPage = 0;
   int linesPerPage = 0;
   int totalPages = 0;
+
+  // Page-collector state (used by collectLineSink during a wrap pass): keep only
+  // collectTargetPage_'s lines into layoutLines, counting all lines produced.
+  int collectTargetPage_ = 0;
+  int collectLineCount_ = 0;
 
   // Orientation-aware layout gutters (computed in wrapText, used in render and extractWordsFromLayout)
   int leftPadding = 20;
@@ -79,12 +86,18 @@ class DictionaryDefinitionActivity final : public Activity {
   bool skipLoopDelay() override { return controller.skipLoopDelay(); }
 
   void wrapText();
+  // Re-parse the definition and lay out ONLY page `page` into layoutLines,
+  // discarding other pages as they are produced; also recomputes totalPages.
+  void loadPage(int page);
   void wrapHtml();
   void wrapPlain();
   void extractWordsFromLayout();
   int getMixedWidth(std::vector<IpaTextSpan>& ipaRuns, const char* text, EpdFontFamily::Style style);
   // Width measurement adapter injected into DictLayout::wrapSpans. ctx is `this`.
   static int measureWidthAdapter(void* ctx, const char* text, EpdFontFamily::Style style, bool isIpa);
+  // Line sink injected into DictLayout::wrapSpans: keeps collectTargetPage_'s
+  // lines, counts the rest. ctx is `this`.
+  static void collectLineSink(void* ctx, DictLayout::LayoutLine&& line);
   bool handleLongPressExitAll(bool enabled);
   int getLineHeight() const;
 };

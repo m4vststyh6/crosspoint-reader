@@ -47,10 +47,9 @@ int DictionaryDefinitionActivity::getLineHeight() const {
 // ---------------------------------------------------------------------------
 
 void DictionaryDefinitionActivity::wrapText() {
-  layoutLines.clear();
-  layoutLines.reserve(32);
   isWordSelectMode = false;
   navigator.reset();
+  currentPage = 0;  // new definition always starts at page 0
 
   const auto orient = renderer.getOrientation();
   const auto metrics = UITheme::getInstance().getMetrics();
@@ -71,6 +70,20 @@ void DictionaryDefinitionActivity::wrapText() {
   linesPerPage = (renderer.getScreenHeight() - topArea - bottomArea) / getLineHeight();
   if (linesPerPage < 1) linesPerPage = 1;
 
+  loadPage(currentPage);
+}
+
+// Re-parse the definition and lay out ONLY `page` into layoutLines. The wrap
+// produces every line, but collectLineSink keeps only this page's lines (the
+// rest are produced then dropped, so peak RAM is one page, not the whole
+// definition) and counts all lines to recompute totalPages. Called on entry and
+// on every page turn (Stage 2a: re-parse every turn, both directions).
+void DictionaryDefinitionActivity::loadPage(int page) {
+  layoutLines.clear();
+  layoutLines.reserve(static_cast<size_t>(linesPerPage) + 1);
+  collectTargetPage_ = page;
+  collectLineCount_ = 0;
+
   // Choose rendering path based on dictionary content type
   const DictInfo info = Dictionary::readInfo(foundLocation.folderPath.c_str());
   if (info.valid && info.sametypesequence[0] == 'h') {
@@ -79,8 +92,16 @@ void DictionaryDefinitionActivity::wrapText() {
     wrapPlain();
   }
 
-  totalPages = (static_cast<int>(layoutLines.size()) + linesPerPage - 1) / linesPerPage;
-  if (totalPages < 1) totalPages = 1;
+  totalPages = DictLayout::paginate(collectLineCount_, linesPerPage);
+}
+
+void DictionaryDefinitionActivity::collectLineSink(void* ctx, DictLayout::LayoutLine&& line) {
+  auto* self = static_cast<DictionaryDefinitionActivity*>(ctx);
+  const int idx = self->collectLineCount_++;
+  const int start = self->collectTargetPage_ * self->linesPerPage;
+  if (idx >= start && idx < start + self->linesPerPage) {
+    self->layoutLines.push_back(std::move(line));
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -122,8 +143,9 @@ void DictionaryDefinitionActivity::wrapHtml() {
 
   // Wrap via the pure layout module (font metrics injected through measureWidthAdapter).
   DictLayout::Measurer measure{this, &DictionaryDefinitionActivity::measureWidthAdapter};
-  DictLayout::wrapSpans(spans, DictLayout::WrapMetrics{maxWidth, indentStep, bulletWidth}, measure, layoutLines);
-  // htmlRenderer freed here; span text has been copied into layoutLines
+  DictLayout::LineSink sink{this, &DictionaryDefinitionActivity::collectLineSink};
+  DictLayout::wrapSpans(spans, DictLayout::WrapMetrics{maxWidth, indentStep, bulletWidth}, measure, sink);
+  // htmlRenderer freed here; the kept page's span text has been copied into layoutLines
 }
 
 // ---------------------------------------------------------------------------
@@ -140,6 +162,7 @@ void DictionaryDefinitionActivity::wrapPlain() {
   std::string currentLineText;
   int currentLineWidth = 0;
 
+  DictLayout::LineSink sink{this, &DictionaryDefinitionActivity::collectLineSink};
   auto flushLine = [&]() {
     if (currentLineText.empty()) return;
     DictLayout::LayoutLine line;
@@ -148,7 +171,7 @@ void DictionaryDefinitionActivity::wrapPlain() {
     for (const auto& run : ipaRuns) {
       line.segments.push_back({run.text, EpdFontFamily::REGULAR, run.isIpa});
     }
-    layoutLines.push_back(std::move(line));
+    sink(std::move(line));
     currentLineText.clear();
     currentLineWidth = 0;
   };
@@ -221,10 +244,9 @@ void DictionaryDefinitionActivity::extractWordsFromLayout() {
   std::string textPool;
   textPool.reserve(512);
 
-  const int startLineIdx = currentPage * linesPerPage;
   const int lineHeight = getLineHeight();  // cached for loop
-  for (int i = 0; i < linesPerPage && (startLineIdx + i) < static_cast<int>(layoutLines.size()); i++) {
-    const DictLayout::LayoutLine& line = layoutLines[startLineIdx + i];
+  for (int i = 0; i < linesPerPage && i < static_cast<int>(layoutLines.size()); i++) {
+    const DictLayout::LayoutLine& line = layoutLines[i];
     const int16_t lineY = static_cast<int16_t>(bodyStartY + i * lineHeight);
     int x = leftPadding + line.indentLevel * indentStep;
 
@@ -362,11 +384,13 @@ void DictionaryDefinitionActivity::loop() {
 
   if (prevPage && currentPage > 0) {
     currentPage--;
+    loadPage(currentPage);
     requestUpdate();
   }
 
   if (nextPage && currentPage < totalPages - 1) {
     currentPage++;
+    loadPage(currentPage);
     requestUpdate();
   }
 
@@ -441,12 +465,12 @@ void DictionaryDefinitionActivity::render(RenderLock&&) {
                       metrics.headerHeight},
                  headword.c_str());
 
-  // Body: draw layout lines for the current page (BW pass)
-  const int startLine = currentPage * linesPerPage;
+  // Body: draw layout lines for the current page (BW pass). layoutLines holds
+  // only the current page (Stage 2a streaming), so it is indexed from 0.
   const int lineHeight = getLineHeight();  // cached for loop + renderHighlight
   auto renderBody = [&]() {
-    for (int i = 0; i < linesPerPage && (startLine + i) < static_cast<int>(layoutLines.size()); i++) {
-      const DictLayout::LayoutLine& line = layoutLines[startLine + i];
+    for (int i = 0; i < linesPerPage && i < static_cast<int>(layoutLines.size()); i++) {
+      const DictLayout::LayoutLine& line = layoutLines[i];
       const int y = bodyStartY + i * lineHeight;
       int x = leftPadding + line.indentLevel * indentStep;
 

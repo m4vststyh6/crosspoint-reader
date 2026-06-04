@@ -2,15 +2,14 @@
 
 #include <Utf8.h>
 
+#include <numeric>
+
 #include "IpaUtils.h"
 
 namespace DictLayout {
 
 void wrapSpans(const std::vector<StyledSpan>& spans, const WrapMetrics& metrics, const Measurer& measure,
-               std::vector<LayoutLine>& out) {
-  out.clear();
-  out.reserve(32);
-
+               const LineSink& sink) {
   std::vector<IpaTextSpan> ipaRuns;
   const int maxWidth = metrics.maxWidth;
   const int indentStep = metrics.indentStep;
@@ -24,14 +23,14 @@ void wrapSpans(const std::vector<StyledSpan>& spans, const WrapMetrics& metrics,
   auto getMixedWidth = [&](const char* text, EpdFontFamily::Style style) {
     ipaRuns.clear();
     splitIpaRuns(text, ipaRuns);
-    int sum = 0;
-    for (const auto& run : ipaRuns) sum += measure(run.text.c_str(), style, run.isIpa);
-    return sum;
+    return std::accumulate(ipaRuns.begin(), ipaRuns.end(), 0, [&](int sum, const IpaTextSpan& run) {
+      return sum + measure(run.text.c_str(), style, run.isIpa);
+    });
   };
 
   auto flushLine = [&]() {
     if (!currentLine.segments.empty()) {
-      out.push_back(std::move(currentLine));
+      sink(std::move(currentLine));
       currentLine = LayoutLine{};
     }
   };
@@ -152,6 +151,16 @@ void wrapSpans(const std::vector<StyledSpan>& spans, const WrapMetrics& metrics,
   }
 
   flushLine();
+}
+
+void wrapSpans(const std::vector<StyledSpan>& spans, const WrapMetrics& metrics, const Measurer& measure,
+               std::vector<LayoutLine>& out) {
+  out.clear();
+  out.reserve(32);
+  const LineSink sink{&out, [](void* ctx, LayoutLine&& line) {
+                        static_cast<std::vector<LayoutLine>*>(ctx)->push_back(std::move(line));
+                      }};
+  wrapSpans(spans, metrics, measure, sink);
 }
 
 }  // namespace DictLayout

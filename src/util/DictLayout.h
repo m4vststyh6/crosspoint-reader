@@ -46,9 +46,25 @@ struct WrapMetrics {
   int bulletWidth = 0;
 };
 
+// Receives each completed display line as it is produced, in order. The callee
+// may keep or discard each line (e.g. retain only one page's worth while counting
+// the rest) — wrapSpans always produces every line exactly once. Function-pointer
+// + ctx (NOT std::function) per the project's binary-size rules.
+struct LineSink {
+  void* ctx = nullptr;
+  void (*fn)(void* ctx, LayoutLine&& line) = nullptr;
+  void operator()(LayoutLine&& line) const { fn(ctx, std::move(line)); }
+};
+
+// Streaming layout: word-wrap every span and emit each completed line to `sink`
+// as soon as it is finished. Lets the caller hold only a subset of lines (one
+// page) rather than the whole definition — this is the Stage 2a RAM fix.
+void wrapSpans(const std::vector<StyledSpan>& spans, const WrapMetrics& metrics, const Measurer& measure,
+               const LineSink& sink);
+
 // Reference full-layout path: word-wrap every span into `out` (cleared first).
-// Produces the entire definition's lines in one pass (non-streaming) — this is
-// the differential oracle the streaming path will be checked against.
+// Produces the entire definition's lines in one pass — the differential oracle
+// the streaming path is checked against. Implemented on top of the sink variant.
 void wrapSpans(const std::vector<StyledSpan>& spans, const WrapMetrics& metrics, const Measurer& measure,
                std::vector<LayoutLine>& out);
 
