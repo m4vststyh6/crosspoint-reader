@@ -277,6 +277,9 @@ void WordSelectNavigator::renderHighlight(const GfxRenderer& renderer, int lineH
     if (sel && sel->continuationIndex >= 0) {
       drawSingleHighlight(renderer, lineHeight, sel->continuationIndex);
     }
+    if (sel && sel->continuationOf >= 0) {
+      drawSingleHighlight(renderer, lineHeight, sel->continuationOf);
+    }
   }
 }
 
@@ -316,7 +319,7 @@ std::optional<WordSelectNavigator::Rect> WordSelectNavigator::renderHighlightDif
   if (inMultiSelectMode) return std::nullopt;
   const auto* curr = getWordAt(currWordIdx);
   if (!curr) return std::nullopt;
-  if (curr->continuationIndex >= 0) {
+  if (curr->continuationIndex >= 0 || curr->continuationOf >= 0) {
     // Hyphenated wrap — two-word highlight is not yet supported by the
     // single-snapshot fast path. Caller falls back to full repaint.
     return std::nullopt;

@@ -294,7 +294,6 @@ void DictionaryWordSelectActivity::mergeHyphenatedWords(std::vector<WordSelectNa
     words[lastWordIdx].lookupLen = static_cast<uint16_t>(merged.size());
     words[nextWordIdx].lookupOffset = mergedOff;
     words[nextWordIdx].lookupLen = static_cast<uint16_t>(merged.size());
-    words[nextWordIdx].continuationIndex = nextWordIdx;
   }
 
   // Cross-page hyphenation
