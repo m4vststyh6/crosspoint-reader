@@ -348,6 +348,43 @@ static void testSingleRowForwardSkipWraps() {
   }
 }
 
+// After a wordPrev snap (second half → first half, crossing a row boundary),
+// pressing rowPrev should reference the second half's row as the nav base, not
+// the first half's row the cursor now sits on.
+//
+// Fixture:  row 0 — wordA  wordB  under-
+//           row 1 — stand  wordD  wordE
+//
+// Sequence: start at wordD (row 1) → Left → land on stand → snap to under- (row 0).
+// Then Up:
+//   Without fix: rowNavBase = currentRow = 0 → targetRow = rowCount-1 = 1 → wraps to stand. WRONG.
+//   With fix:    rowNavBase = stand.row = 1 → targetRow = 0 → stays on under-. CORRECT.
+static void testHyphenatedBackwardThenRowPrev() {
+  std::printf("testHyphenatedBackwardThenRowPrev\n");
+  WordSelectNavigator nav = makeHyphenatedFixture();
+  MappedInputManager input;
+  GfxRenderer renderer;
+
+  // Fixture starts on wordD (row 1). Left: land on stand → snap to under- (row 0).
+  input.reset();
+  input.setReleased(MappedInputManager::Button::Left, true);
+  bool changed = nav.handleNavigation(input, renderer);
+  CHECK(changed, "Left changed selection");
+  CHECK(std::strcmp(nav.getDisplay(*nav.getSelected()), "under-") == 0, "snapped to first half 'under-'");
+
+  // Up: should navigate to row 0 (one above stand's row 1), not wrap to row 1.
+  input.reset();
+  input.setReleased(MappedInputManager::Button::Up, true);
+  changed = nav.handleNavigation(input, renderer);
+  CHECK(changed, "Up registered as a navigation event");
+  const WordSelectNavigator::WordInfo* sel = nav.getSelected();
+  CHECK(sel != nullptr, "has selected word after Up");
+  if (sel) {
+    CHECK(std::strcmp(nav.getDisplay(*sel), "under-") == 0,
+          "Up after snap stays on row 0 ('under-'), does NOT wrap to 'stand' on row 1");
+  }
+}
+
 // renderHighlight on a non-hyphenated word: exactly 1 fillRect + 1 drawText.
 static void testRenderHighlightSingleWord() {
   std::printf("testRenderHighlightSingleWord\n");
@@ -430,6 +467,7 @@ int main() {
   testHyphenatedGetPairedHalf();
   testForwardSkipAtRowBoundary();
   testSingleRowForwardSkipWraps();
+  testHyphenatedBackwardThenRowPrev();
   testRenderHighlightSingleWord();
   testRenderHighlightHyphenatedBothHalves();
   testRenderHighlightHyphenatedFromSecondHalf();

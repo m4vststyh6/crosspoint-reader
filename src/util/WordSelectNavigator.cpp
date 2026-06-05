@@ -46,6 +46,7 @@ void WordSelectNavigator::reset() {
   inMultiSelectMode = false;
   confirmReleaseConsumed = false;
   anchorFlatIndex = -1;
+  pendingSnapIdx = -1;
 }
 
 const WordSelectNavigator::WordInfo* WordSelectNavigator::getSelected() const {
@@ -96,12 +97,17 @@ int WordSelectNavigator::findClosestWord(int targetRow) const {
   if (rows[targetRow].wordIndices.empty()) return 0;
   const int wordIdx = rows[currentRow].wordIndices[currentWordInRow];
   const int currentCenterX = words[wordIdx].screenX + words[wordIdx].width / 2;
+  return findClosestWordFromX(targetRow, currentCenterX);
+}
+
+int WordSelectNavigator::findClosestWordFromX(int targetRow, int refCenterX) const {
+  if (rows[targetRow].wordIndices.empty()) return 0;
   int bestMatch = 0;
   int bestDist = INT_MAX;
   for (int i = 0; i < static_cast<int>(rows[targetRow].wordIndices.size()); i++) {
     const int idx = rows[targetRow].wordIndices[i];
     const int centerX = words[idx].screenX + words[idx].width / 2;
-    const int dist = std::abs(centerX - currentCenterX);
+    const int dist = std::abs(centerX - refCenterX);
     if (dist < bestDist) {
       bestDist = dist;
       bestMatch = i;
@@ -146,16 +152,27 @@ bool WordSelectNavigator::handleNavigation(const MappedInputManager& input, cons
   const int rowCount = static_cast<int>(rows.size());
   bool changed = false;
 
+  // If the previous action was a wordPrev snap (second half → first half across
+  // rows), use the second half's position as the row-nav reference so that
+  // rowPrev/rowNext feels like it originates from where the user was.
+  // Any directional input clears this state.
+  const bool hasPendingSnap = pendingSnapIdx >= 0;
+  const int rowNavBase = hasPendingSnap ? words[pendingSnapIdx].row : currentRow;
+  const int rowNavRefX = hasPendingSnap ? words[pendingSnapIdx].screenX + words[pendingSnapIdx].width / 2 : -1;
+  if (rowPrevPressed || rowNextPressed || wordPrevPressed || wordNextPressed) {
+    pendingSnapIdx = -1;
+  }
+
   if (rowPrevPressed) {
-    const int targetRow = (currentRow > 0) ? currentRow - 1 : rowCount - 1;
-    currentWordInRow = findClosestWord(targetRow);
+    const int targetRow = (rowNavBase > 0) ? rowNavBase - 1 : rowCount - 1;
+    currentWordInRow = (rowNavRefX >= 0) ? findClosestWordFromX(targetRow, rowNavRefX) : findClosestWord(targetRow);
     currentRow = targetRow;
     changed = true;
   }
 
   if (rowNextPressed) {
-    const int targetRow = (currentRow < rowCount - 1) ? currentRow + 1 : 0;
-    currentWordInRow = findClosestWord(targetRow);
+    const int targetRow = (rowNavBase < rowCount - 1) ? rowNavBase + 1 : 0;
+    currentWordInRow = (rowNavRefX >= 0) ? findClosestWordFromX(targetRow, rowNavRefX) : findClosestWord(targetRow);
     currentRow = targetRow;
     changed = true;
   }
@@ -213,6 +230,9 @@ bool WordSelectNavigator::handleNavigation(const MappedInputManager& input, cons
         }
       } else if (wordPrevPressed) {
         // Moving backward: snap to the first half.
+        // Record the second half's index so subsequent row navigation
+        // references its position rather than the first half's.
+        pendingSnapIdx = idx;
         const int firstIdx = words[idx].continuationOf;
         currentRow = words[firstIdx].row;
         for (int i = 0; i < static_cast<int>(rows[currentRow].wordIndices.size()); i++) {

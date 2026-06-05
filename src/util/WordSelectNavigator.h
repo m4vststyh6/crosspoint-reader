@@ -210,6 +210,12 @@ class WordSelectNavigator {
   int anchorFlatIndex = -1;
 
   int findClosestWord(int targetRow) const;
+  int findClosestWordFromX(int targetRow, int refCenterX) const;
+
+  // Flat index of the second half we snapped from on wordPrev. Allows subsequent
+  // rowPrev/rowNext to reference that half's position rather than the first half's.
+  // -1 means inactive.
+  int pendingSnapIdx = -1;
 
   // Snapshot of pixels under the most recently drawn highlight. Used by
   // renderHighlightDifferential to restore the framebuffer before drawing the
