@@ -250,8 +250,8 @@ static void testHyphenatedNavRowNavExempt() {
   }
 }
 
-static void testHyphenatedGetContinuation() {
-  std::printf("testHyphenatedGetContinuation\n");
+static void testHyphenatedGetPairedHalf() {
+  std::printf("testHyphenatedGetPairedHalf\n");
   WordSelectNavigator nav = makeHyphenatedFixture();
   MappedInputManager input;
   GfxRenderer renderer;
@@ -263,7 +263,7 @@ static void testHyphenatedGetContinuation() {
   const WordSelectNavigator::WordInfo* sel = nav.getSelected();
   CHECK(sel != nullptr, "has selected word");
   if (sel) {
-    const WordSelectNavigator::WordInfo* cont = nav.getContinuation();
+    const WordSelectNavigator::WordInfo* cont = nav.getPairedHalf();
     CHECK(cont != nullptr, "first half has continuation");
     if (cont) {
       CHECK(std::strcmp(nav.getDisplay(*cont), "stand") == 0, "continuation is 'stand'");
@@ -295,14 +295,145 @@ static void testForwardSkipAtRowBoundary() {
   }
 }
 
+// Single row: wordA(0) under-(1) stand(2)
+// under- has continuationIndex=2, stand has continuationOf=1.
+// load() centers on middle word = under- (wordInRow=1).
+static WordSelectNavigator makeSingleRowHyphenatedFixture() {
+  std::string pool;
+
+  WordSelectNavigator::WordInfo w0 = mkWord("wordA", 10, 0, 40, 0);
+  w0.textOffset = poolAppendString(pool, "wordA");
+  w0.lookupOffset = w0.textOffset;
+
+  WordSelectNavigator::WordInfo w1 = mkWord("under-", 60, 0, 50, 0);
+  w1.textOffset = poolAppendString(pool, "under-");
+  w1.lookupOffset = w1.textOffset;
+  w1.continuationIndex = 2;
+
+  WordSelectNavigator::WordInfo w2 = mkWord("stand", 120, 0, 45, 0);
+  w2.textOffset = poolAppendString(pool, "stand");
+  w2.lookupOffset = w2.textOffset;
+  w2.continuationOf = 1;
+
+  std::vector<WordSelectNavigator::WordInfo> words = {w0, w1, w2};
+  std::vector<WordSelectNavigator::Row> rows;
+  WordSelectNavigator::organizeIntoRows(words, rows);
+
+  WordSelectNavigator nav;
+  nav.load(std::move(words), std::move(rows), std::move(pool));
+  return nav;
+}
+
+// When the only row ends with a hyphenated pair, pressing Right from the first
+// half should wrap around to word 0 — not get stuck on the second half.
+static void testSingleRowForwardSkipWraps() {
+  std::printf("testSingleRowForwardSkipWraps\n");
+  WordSelectNavigator nav = makeSingleRowHyphenatedFixture();
+  MappedInputManager input;
+  GfxRenderer renderer;
+
+  // load() places cursor on under- (wordInRow=1, middle of 3).
+  CHECK(std::strcmp(nav.getDisplay(*nav.getSelected()), "under-") == 0, "cursor starts on 'under-'");
+
+  // Press Right: moves to stand, smoothing code tries to skip past stand,
+  // single-row else branch wraps to wordInRow=0 (wordA).
+  input.reset();
+  input.setReleased(MappedInputManager::Button::Right, true);
+  bool changed = nav.handleNavigation(input, renderer);
+  CHECK(changed, "selection changed");
+  const WordSelectNavigator::WordInfo* sel = nav.getSelected();
+  if (sel) {
+    CHECK(std::strcmp(nav.getDisplay(*sel), "wordA") == 0,
+          "single-row wrap: cursor on 'wordA', not stuck on second half");
+  }
+}
+
+// renderHighlight on a non-hyphenated word: exactly 1 fillRect + 1 drawText.
+static void testRenderHighlightSingleWord() {
+  std::printf("testRenderHighlightSingleWord\n");
+  WordSelectNavigator nav = makeHyphenatedFixture();
+  MappedInputManager input;
+  GfxRenderer renderer;
+
+  // Fixture starts on wordD (non-hyphenated).
+  CHECK(std::strcmp(nav.getDisplay(*nav.getSelected()), "wordD") == 0, "cursor on 'wordD'");
+
+  renderer.resetCounters();
+  nav.renderHighlight(renderer, 16);
+  CHECK(renderer.fillRectCallCount == 1, "single word: 1 fillRect");
+  CHECK(renderer.drawTextCallCount == 1, "single word: 1 drawText");
+}
+
+// renderHighlight on the first half of a hyphenated pair: 2 fillRect + 2 drawText.
+static void testRenderHighlightHyphenatedBothHalves() {
+  std::printf("testRenderHighlightHyphenatedBothHalves\n");
+  WordSelectNavigator nav = makeHyphenatedFixture();
+  MappedInputManager input;
+  GfxRenderer renderer;
+
+  navigateTo(nav, input, renderer, "under-");
+  CHECK(std::strcmp(nav.getDisplay(*nav.getSelected()), "under-") == 0, "cursor on 'under-'");
+
+  renderer.resetCounters();
+  nav.renderHighlight(renderer, 16);
+  CHECK(renderer.fillRectCallCount == 2, "hyphenated first half: 2 fillRects (both halves)");
+  CHECK(renderer.drawTextCallCount == 2, "hyphenated first half: 2 drawTexts (both halves)");
+}
+
+// renderHighlight when cursor is on the second half (via row-nav): 2 fillRect + 2 drawText.
+static void testRenderHighlightHyphenatedFromSecondHalf() {
+  std::printf("testRenderHighlightHyphenatedFromSecondHalf\n");
+  WordSelectNavigator nav = makeHyphenatedFixture();
+  MappedInputManager input;
+  GfxRenderer renderer;
+
+  // Row-nav Down from under- lands on stand (second half, same X).
+  navigateTo(nav, input, renderer, "under-");
+  input.reset();
+  input.setReleased(MappedInputManager::Button::Down, true);
+  nav.handleNavigation(input, renderer);
+  CHECK(std::strcmp(nav.getDisplay(*nav.getSelected()), "stand") == 0, "cursor on 'stand' (second half)");
+
+  renderer.resetCounters();
+  nav.renderHighlight(renderer, 16);
+  CHECK(renderer.fillRectCallCount == 2, "second half: 2 fillRects (both halves via continuationOf)");
+  CHECK(renderer.drawTextCallCount == 2, "second half: 2 drawTexts (both halves via continuationOf)");
+}
+
+// renderHighlightDifferential returns nullopt: stub readFramebufferRegion returns 0
+// (capture fails), and hyphenated words are always rejected by the fast path.
+static void testRenderHighlightDifferentialFallback() {
+  std::printf("testRenderHighlightDifferentialFallback\n");
+  WordSelectNavigator nav = makeHyphenatedFixture();
+  MappedInputManager input;
+  GfxRenderer renderer;
+
+  // Non-hyphenated word (wordD, flat index 4): capture fails because stub returns 0 bytes.
+  navigateTo(nav, input, renderer, "wordD");
+  const int wordDIdx = nav.getCurrentFlatIndex();
+  auto result = nav.renderHighlightDifferential(renderer, 16, -1, wordDIdx);
+  CHECK(!result.has_value(), "non-hyphenated: nullopt when readFramebufferRegion returns 0");
+
+  // Hyphenated first half (under-, flat index 2): always nullopt (fast path rejected).
+  navigateTo(nav, input, renderer, "under-");
+  const int underIdx = nav.getCurrentFlatIndex();
+  auto result2 = nav.renderHighlightDifferential(renderer, 16, -1, underIdx);
+  CHECK(!result2.has_value(), "hyphenated word: nullopt (fast path not supported)");
+}
+
 int main() {
   std::printf("=== WordSelectNavigator host litmus ===\n");
   testOrganizeIntoRows();
   testHyphenatedNavBackward();
   testHyphenatedNavForward();
   testHyphenatedNavRowNavExempt();
-  testHyphenatedGetContinuation();
+  testHyphenatedGetPairedHalf();
   testForwardSkipAtRowBoundary();
+  testSingleRowForwardSkipWraps();
+  testRenderHighlightSingleWord();
+  testRenderHighlightHyphenatedBothHalves();
+  testRenderHighlightHyphenatedFromSecondHalf();
+  testRenderHighlightDifferentialFallback();
   std::printf("\n%d checks, %d failures\n", g_checks, g_failures);
   return g_failures == 0 ? 0 : 1;
 }

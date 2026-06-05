@@ -77,9 +77,10 @@ class WordSelectNavigator {
   // Currently highlighted word. nullptr if the word list is empty.
   const WordInfo* getSelected() const;
 
-  // Hyphenated continuation of the selected word (EPUB use only).
-  // Returns nullptr when there is no continuation.
-  const WordInfo* getContinuation() const;
+  // The paired half of the selected hyphenated word (EPUB use only).
+  // When on the first half returns the second half; when on the second half returns the first.
+  // Returns nullptr when the selected word has no paired half.
+  const WordInfo* getPairedHalf() const;
 
   bool isEmpty() const { return words.empty(); }
 

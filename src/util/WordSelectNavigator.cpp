@@ -54,7 +54,7 @@ const WordSelectNavigator::WordInfo* WordSelectNavigator::getSelected() const {
   return &words[rows[currentRow].wordIndices[currentWordInRow]];
 }
 
-const WordSelectNavigator::WordInfo* WordSelectNavigator::getContinuation() const {
+const WordSelectNavigator::WordInfo* WordSelectNavigator::getPairedHalf() const {
   const WordInfo* sel = getSelected();
   if (!sel) return nullptr;
   const int wordIdx = rows[currentRow].wordIndices[currentWordInRow];
@@ -176,6 +176,8 @@ bool WordSelectNavigator::handleNavigation(const MappedInputManager& input, cons
     } else if (rowCount > 1) {
       currentRow = (currentRow < rowCount - 1) ? currentRow + 1 : 0;
       currentWordInRow = 0;
+    } else {
+      currentWordInRow = 0;  // single-row wrap
     }
     changed = true;
   }
@@ -194,6 +196,8 @@ bool WordSelectNavigator::handleNavigation(const MappedInputManager& input, cons
         } else if (rowCount > 1) {
           currentRow = (currentRow < rowCount - 1) ? currentRow + 1 : 0;
           currentWordInRow = 0;
+        } else {
+          currentWordInRow = 0;  // single-row wrap
         }
         // If the skip landed on yet another continuation, snap to its first half.
         const int skippedIdx = getCurrentFlatIndex();
