@@ -151,6 +151,7 @@ bool WordSelectNavigator::handleNavigation(const MappedInputManager& input, cons
 
   const int rowCount = static_cast<int>(rows.size());
   bool changed = false;
+  const int prevFlatIdx = getCurrentFlatIndex();
 
   // If the previous action was a wordPrev snap (second half → first half across
   // rows), use the second half's position as the row-nav reference so that
@@ -244,6 +245,22 @@ bool WordSelectNavigator::handleNavigation(const MappedInputManager& input, cons
       }
       // Row navigation leaves cursor on whichever half
       // findClosestWord landed on. Both halves highlight regardless.
+    }
+
+    // Symmetric with the wordNext skip: if we came directly from the second
+    // half and wrapped into its first half, skip backward past the first half
+    // so the pair is treated as a single navigation unit in both directions.
+    if (wordPrevPressed) {
+      const int curIdx = getCurrentFlatIndex();
+      if (curIdx >= 0 && words[curIdx].continuationOf < 0 && words[curIdx].continuationIndex >= 0 &&
+          prevFlatIdx == words[curIdx].continuationIndex) {
+        if (currentWordInRow > 0) {
+          currentWordInRow--;
+        } else if (rowCount > 1) {
+          currentRow = (currentRow > 0) ? currentRow - 1 : rowCount - 1;
+          currentWordInRow = static_cast<int>(rows[currentRow].wordIndices.size()) - 1;
+        }
+      }
     }
   }
 

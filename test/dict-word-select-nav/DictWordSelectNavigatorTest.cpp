@@ -54,7 +54,7 @@ static WordSelectNavigator::WordInfo mkWord(const char* text, int16_t x, int16_t
 }
 
 // Row 0:  wordA(10)  wordB(60)  under-(200)
-// Row 1:  stand(200) wordD(260) wordE(310)
+// Row 1:                        stand(200) wordD(260) wordE(310)
 //
 // Hyphenated pair: under- (first half, index 2) + stand (second half, index 3)
 // load() starts the cursor on the middle row/word (row 1, word 1 -> wordD).
@@ -231,9 +231,13 @@ static void testHyphenatedNavRowNavExempt() {
   MappedInputManager input;
   GfxRenderer renderer;
 
-  // Navigate to under- (first half, row 0).
-  navigateTo(nav, input, renderer, "under-");
-  CHECK(std::strcmp(nav.getDisplay(*nav.getSelected()), "under-") == 0, "arrived at 'under-'");
+  // Navigate to under- (first half, row 0) via row-nav (Up from wordD).
+  // Using Up avoids the wordPrev→snap path, which would leave pendingSnapIdx
+  // pointing at stand and cause the subsequent Down to mis-navigate.
+  input.reset();
+  input.setReleased(MappedInputManager::Button::Up, true);
+  nav.handleNavigation(input, renderer);
+  CHECK(std::strcmp(nav.getDisplay(*nav.getSelected()), "under-") == 0, "arrived at 'under-' via row-nav");
 
   // Press Down -> findClosestWord on row 1 picks stand (same X=200).
   // Row navigation should NOT snap back to under-; cursor stays on stand.
@@ -385,6 +389,47 @@ static void testHyphenatedBackwardThenRowPrev() {
   }
 }
 
+// When the cursor arrives on the second half via row navigation and the user
+// presses Left, the pair should be treated as one stop: one Left skips past
+// the first half and lands on the word before it.
+//
+// Fixture:  row 0 — wordA  wordB  under-
+//           row 1 —               stand  wordD  wordE
+//
+// Sequence: navigate to under- (row 0) → Down → land on stand (second half,
+//           row 1) → Left once → expect wordB, not under-.
+static void testHyphenatedNavFromSecondHalfLeft() {
+  std::printf("testHyphenatedNavFromSecondHalfLeft\n");
+  WordSelectNavigator nav = makeHyphenatedFixture();
+  MappedInputManager input;
+  GfxRenderer renderer;
+
+  // Navigate to under- via Up (row-nav) to avoid leaving pendingSnapIdx set.
+  // If navigateTo were used, it would arrive via the wordPrev snap path and set
+  // pendingSnapIdx=stand, causing the subsequent Down to wrap back to row 0.
+  input.reset();
+  input.setReleased(MappedInputManager::Button::Up, true);
+  nav.handleNavigation(input, renderer);
+  CHECK(std::strcmp(nav.getDisplay(*nav.getSelected()), "under-") == 0, "arrived at 'under-' via row-nav");
+
+  // Down: row nav from row 0 → row 1, closest X to under-(200) is stand(200).
+  input.reset();
+  input.setReleased(MappedInputManager::Button::Down, true);
+  nav.handleNavigation(input, renderer);
+  CHECK(std::strcmp(nav.getDisplay(*nav.getSelected()), "stand") == 0, "row-nav landed on 'stand' (second half)");
+
+  // Left once: should skip past the first half and land on wordB.
+  input.reset();
+  input.setReleased(MappedInputManager::Button::Left, true);
+  bool changed = nav.handleNavigation(input, renderer);
+  CHECK(changed, "selection changed on Left");
+  const WordSelectNavigator::WordInfo* sel = nav.getSelected();
+  if (sel) {
+    CHECK(std::strcmp(nav.getDisplay(*sel), "wordB") == 0,
+          "one Left from second half skips first half and lands on 'wordB'");
+  }
+}
+
 // renderHighlight on a non-hyphenated word: exactly 1 fillRect + 1 drawText.
 static void testRenderHighlightSingleWord() {
   std::printf("testRenderHighlightSingleWord\n");
@@ -425,7 +470,10 @@ static void testRenderHighlightHyphenatedFromSecondHalf() {
   GfxRenderer renderer;
 
   // Row-nav Down from under- lands on stand (second half, same X).
-  navigateTo(nav, input, renderer, "under-");
+  // Navigate to under- via Up (row-nav) to avoid leaving pendingSnapIdx set.
+  input.reset();
+  input.setReleased(MappedInputManager::Button::Up, true);
+  nav.handleNavigation(input, renderer);
   input.reset();
   input.setReleased(MappedInputManager::Button::Down, true);
   nav.handleNavigation(input, renderer);
@@ -468,6 +516,7 @@ int main() {
   testForwardSkipAtRowBoundary();
   testSingleRowForwardSkipWraps();
   testHyphenatedBackwardThenRowPrev();
+  testHyphenatedNavFromSecondHalfLeft();
   testRenderHighlightSingleWord();
   testRenderHighlightHyphenatedBothHalves();
   testRenderHighlightHyphenatedFromSecondHalf();
