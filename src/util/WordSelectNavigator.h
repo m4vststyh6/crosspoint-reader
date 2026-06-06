@@ -65,6 +65,14 @@ class WordSelectNavigator {
   // Sets each word's row field and populates the rows vector.
   static void organizeIntoRows(std::vector<WordInfo>& words, std::vector<Row>& rows);
 
+  // Link the last word of each row that ends with a trailing hyphen to the
+  // first word of the next row, marking them as a compound pair via
+  // continuationIndex / continuationOf. Also stores a merged lookup text
+  // (hyphen stripped) shared by both halves for dictionary lookup.
+  // Words whose text both starts and ends with '-' (e.g. -re-) are standalone
+  // affix tokens and are skipped — they are not compound-word first halves.
+  static void mergeHyphenatedPairs(std::vector<WordInfo>& words, const std::vector<Row>& rows, std::string& textPool);
+
   // Append a null-terminated string to a text pool. Returns the offset.
   // Uses manual linear +256 growth to avoid std::string doubling.
   static uint16_t poolAppend(std::string& pool, const char* s, size_t len);

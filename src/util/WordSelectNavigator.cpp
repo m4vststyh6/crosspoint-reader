@@ -1,6 +1,7 @@
 #include "WordSelectNavigator.h"
 
 #include <GfxRenderer.h>
+#include <Utf8.h>
 
 #include <cstdlib>
 
@@ -30,6 +31,37 @@ void WordSelectNavigator::organizeIntoRows(std::vector<WordInfo>& words, std::ve
     }
     words[i].row = static_cast<int16_t>(rows.size() - 1);
     rows.back().wordIndices.push_back(static_cast<int>(i));
+  }
+}
+
+void WordSelectNavigator::mergeHyphenatedPairs(std::vector<WordInfo>& words, const std::vector<Row>& rows,
+                                               std::string& textPool) {
+  for (size_t r = 0; r + 1 < rows.size(); r++) {
+    if (rows[r].wordIndices.empty() || rows[r + 1].wordIndices.empty()) continue;
+
+    int lastWordIdx = rows[r].wordIndices.back();
+    const char* lastWord = textPool.data() + words[lastWordIdx].textOffset;
+    uint16_t lastLen = words[lastWordIdx].textLen;
+    if (lastLen == 0) continue;
+    if (!utf8EndsWithHyphen(lastWord, lastLen)) continue;
+    // A word that also starts with '-' (e.g. -re-) is a standalone affix token,
+    // not the first half of a line-break compound.
+    if (lastWord[0] == '-') continue;
+
+    int nextWordIdx = rows[r + 1].wordIndices.front();
+    words[lastWordIdx].continuationIndex = nextWordIdx;
+    words[nextWordIdx].continuationOf = lastWordIdx;
+
+    std::string firstPart(lastWord, lastLen);
+    utf8RemoveTrailingHyphen(firstPart);
+    const char* nextWord = textPool.data() + words[nextWordIdx].textOffset;
+    const char* strippedNext = (nextWord[0] == '-') ? nextWord + 1 : nextWord;
+    std::string merged = firstPart + strippedNext;
+    uint16_t mergedOff = poolAppend(textPool, merged.c_str(), merged.size());
+    words[lastWordIdx].lookupOffset = mergedOff;
+    words[lastWordIdx].lookupLen = static_cast<uint16_t>(merged.size());
+    words[nextWordIdx].lookupOffset = mergedOff;
+    words[nextWordIdx].lookupLen = static_cast<uint16_t>(merged.size());
   }
 }
 
