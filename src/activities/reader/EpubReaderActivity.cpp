@@ -259,10 +259,18 @@ void EpubReaderActivity::loop() {
   // Dictionary uses 600 ms (Dictionary::LONG_PRESS_MS); Bookmark uses 400 ms (ReaderUtils::BOOKMARK_HOLD_MS).
   if (section && mappedInput.isPressed(MappedInputManager::Button::Confirm)) {
     if (SETTINGS.holdConfirmAction == CrossPointSettings::HOLD_CONFIRM_DICTIONARY &&
-        mappedInput.getHeldTime() >= Dictionary::LONG_PRESS_MS && Dictionary::exists(epub->getCachePath().c_str())) {
-      ignoreNextConfirmRelease = true;
-      openWordSelect(/*framebufferContainsPage=*/true);
-      return;
+        mappedInput.getHeldTime() >= Dictionary::LONG_PRESS_MS) {
+      if (Dictionary::exists(epub->getCachePath().c_str())) {
+        ignoreNextConfirmRelease = true;
+        openWordSelect(/*framebufferContainsPage=*/true);
+        return;
+      }
+      if (!showNoDictionaryMessage) {
+        showNoDictionaryMessage = true;
+        ignoreNextConfirmRelease = true;
+        noDictionaryMessageTime = millis();
+        requestUpdate();
+      }
     }
     if (SETTINGS.holdConfirmAction == CrossPointSettings::HOLD_CONFIRM_BOOKMARK &&
         mappedInput.getHeldTime() >= ReaderUtils::BOOKMARK_HOLD_MS && !showBookmarkMessage) {
@@ -276,6 +284,11 @@ void EpubReaderActivity::loop() {
 
   if (showBookmarkMessage && (millis() - bookmarkMessageTime) >= ReaderUtils::BOOKMARK_MESSAGE_DURATION_MS) {
     showBookmarkMessage = false;
+    requestUpdate();
+  }
+
+  if (showNoDictionaryMessage && (millis() - noDictionaryMessageTime) >= ReaderUtils::DICTIONARY_MESSAGE_DURATION_MS) {
+    showNoDictionaryMessage = false;
     requestUpdate();
   }
 
@@ -981,6 +994,10 @@ void EpubReaderActivity::render(RenderLock&& lock) {
 
   if (showBookmarkMessage) {
     GUI.drawPopup(renderer, tr(STR_BOOKMARK_ADDED));
+  }
+
+  if (showNoDictionaryMessage) {
+    GUI.drawPopup(renderer, tr(STR_DICT_NO_DICT_SET));
   }
 }
 
