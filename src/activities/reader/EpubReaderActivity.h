@@ -35,10 +35,12 @@ class EpubReaderActivity final : public Activity {
   bool ignoreBackUntilRelease = false;    // Suppress Back bleed-through after dictionary chain exit
   bool ignoreNextConfirmRelease = false;  // Suppress menu open after hold-Confirm gesture fires
   bool showBookmarkMessage = false;
+  bool showNoDictionaryMessage = false;
   // Tracks whether this book is currently removed from Recent Books by the
   // removeReadBooksFromRecents feature (set at End-of-Book, cleared if paged back in).
   bool recentsEntryRemoved = false;
   unsigned long bookmarkMessageTime = 0UL;
+  unsigned long noDictionaryMessageTime = 0UL;
   // Set when the reader is left at end-of-book and SETTINGS.moveFinishedToReadFolder is on.
   // Consumed in onExit() to relocate the finished book into /Read/.
   bool pendingReadFolderMove = false;
