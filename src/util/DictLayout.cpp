@@ -15,6 +15,7 @@ Wrapper::Wrapper(const WrapMetrics& metrics, const Measurer& measure, const Line
       bulletWidth_(metrics.bulletWidth),
       measure_(measure),
       sink_(sink) {
+  ipaRuns_.reserve(4);
   startLine(0, false);
 }
 
