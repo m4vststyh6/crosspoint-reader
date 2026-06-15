@@ -547,6 +547,98 @@ static void testRenderHighlightDifferentialFallback() {
   CHECK(!result2.has_value(), "hyphenated word: nullopt (fast path not supported)");
 }
 
+// Multi-select highlight: continuation half outside [lo,hi] is still drawn.
+// Anchor on wordB (index 1), cursor on under- (index 2, first half).
+// The second half 'stand' (index 3) lies outside [1,2] and must also be drawn.
+static void testRenderHighlightMultiSelectHyphenatedFirstHalf() {
+  std::printf("testRenderHighlightMultiSelectHyphenatedFirstHalf\n");
+  WordSelectNavigator nav = makeHyphenatedFixture();
+  MappedInputManager input;
+  GfxRenderer renderer;
+
+  // Navigate to under- to position the cursor there.
+  navigateTo(nav, input, renderer, "under-");
+  CHECK(std::strcmp(nav.getDisplay(*nav.getSelected()), "under-") == 0, "cursor on 'under-'");
+
+  // Enter multi-select with anchor on under- (index 2), then manually simulate
+  // an anchor one word earlier (wordB, index 1) by entering multi-select after
+  // navigating back one step.
+  navigateTo(nav, input, renderer, "wordB");
+  CHECK(std::strcmp(nav.getDisplay(*nav.getSelected()), "wordB") == 0, "cursor on 'wordB'");
+
+  // Enter multi-select mode with anchor at wordB.
+  input.reset();
+  input.setPressed(MappedInputManager::Button::Confirm, true);
+  input.setHeldTime(700);  // > 600ms default threshold
+  std::string phrase;
+  nav.handleMultiSelectInput(input, phrase);
+  CHECK(nav.isMultiSelecting(), "entered multi-select mode");
+
+  // Consume the release.
+  input.reset();
+  input.setReleased(MappedInputManager::Button::Confirm, true);
+  nav.handleMultiSelectInput(input, phrase);
+
+  // Move cursor to under- (first half, index 2).
+  navigateTo(nav, input, renderer, "under-");
+  CHECK(std::strcmp(nav.getDisplay(*nav.getSelected()), "under-") == 0, "cursor on 'under-' in multi-select");
+  CHECK(nav.isMultiSelecting(), "still in multi-select");
+
+  // Range is wordB(1)..under-(2). 'stand'(3) is outside but is under-'s continuationIndex.
+  // Expect 3 fillRects: wordB, under-, stand.
+  renderer.resetCounters();
+  nav.renderHighlight(renderer, 16);
+  CHECK(renderer.fillRectCallCount == 3, "multi-select ending on first half: 3 fillRects (wordB, under-, stand)");
+  CHECK(renderer.drawTextCallCount == 3, "multi-select ending on first half: 3 drawTexts");
+}
+
+// Multi-select highlight: when the range starts on the second half (anchor on
+// 'stand', index 3), the first half 'under-' (index 2) lies outside [3, hi]
+// and must also be drawn.
+static void testRenderHighlightMultiSelectHyphenatedSecondHalf() {
+  std::printf("testRenderHighlightMultiSelectHyphenatedSecondHalf\n");
+  WordSelectNavigator nav = makeHyphenatedFixture();
+  MappedInputManager input;
+  GfxRenderer renderer;
+
+  // Row-nav Down from initial wordD position lands on stand (via row nav, exempt from snap).
+  // Navigate to wordD first, then Up to row 0, then Down to row 1 to land on stand.
+  input.reset();
+  input.setReleased(MappedInputManager::Button::Up, true);
+  nav.handleNavigation(input, renderer);
+  input.reset();
+  input.setReleased(MappedInputManager::Button::Down, true);
+  nav.handleNavigation(input, renderer);
+  CHECK(std::strcmp(nav.getDisplay(*nav.getSelected()), "stand") == 0, "cursor on 'stand' (second half)");
+
+  // Enter multi-select with anchor on stand (index 3).
+  input.reset();
+  input.setPressed(MappedInputManager::Button::Confirm, true);
+  input.setHeldTime(700);
+  std::string phrase;
+  nav.handleMultiSelectInput(input, phrase);
+  CHECK(nav.isMultiSelecting(), "entered multi-select mode");
+
+  // Consume the release.
+  input.reset();
+  input.setReleased(MappedInputManager::Button::Confirm, true);
+  nav.handleMultiSelectInput(input, phrase);
+
+  // Move cursor to wordD (index 4), so range is stand(3)..wordD(4).
+  // 'under-'(2) is outside [3,4] but is stand's continuationOf; must be drawn.
+  input.reset();
+  input.setReleased(MappedInputManager::Button::Right, true);
+  nav.handleNavigation(input, renderer);
+  CHECK(std::strcmp(nav.getDisplay(*nav.getSelected()), "wordD") == 0, "cursor on 'wordD'");
+  CHECK(nav.isMultiSelecting(), "still in multi-select");
+
+  // Expect 3 fillRects: under-, stand, wordD.
+  renderer.resetCounters();
+  nav.renderHighlight(renderer, 16);
+  CHECK(renderer.fillRectCallCount == 3, "multi-select starting on second half: 3 fillRects (under-, stand, wordD)");
+  CHECK(renderer.drawTextCallCount == 3, "multi-select starting on second half: 3 drawTexts");
+}
+
 // Run Tests A–E against any two-row fixture with the same layout as
 // makeHyphenatedFixture. firstHalf / secondHalf are the display strings of
 // the two pair members; the surrounding words are always wordA/wordB/wordD/wordE.
@@ -771,6 +863,8 @@ int main() {
   testRenderHighlightHyphenatedBothHalves();
   testRenderHighlightHyphenatedFromSecondHalf();
   testRenderHighlightDifferentialFallback();
+  testRenderHighlightMultiSelectHyphenatedFirstHalf();
+  testRenderHighlightMultiSelectHyphenatedSecondHalf();
   testHyphenBothEndsNotPaired();
   testMergeLookupBothHyphens();
   testHyphenEndOnly();

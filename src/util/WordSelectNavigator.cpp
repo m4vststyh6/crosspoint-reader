@@ -384,6 +384,18 @@ void WordSelectNavigator::renderHighlight(const GfxRenderer& renderer, int lineH
     const int hi = std::max(anchorFlatIndex, cursorIdx);
     for (int i = lo; i <= hi; i++) {
       drawSingleHighlight(renderer, lineHeight, i);
+      // Also highlight any paired continuation half that falls outside [lo, hi].
+      // Navigation stops the cursor on the first half of a hyphenated pair, so
+      // the second half sits at hi+1 and would otherwise be skipped. The guard
+      // prevents double-drawing halves already covered by the loop.
+      const auto* w = getWordAt(i);
+      if (!w) continue;
+      if (w->continuationIndex >= 0 && (w->continuationIndex < lo || w->continuationIndex > hi)) {
+        drawSingleHighlight(renderer, lineHeight, w->continuationIndex);
+      }
+      if (w->continuationOf >= 0 && (w->continuationOf < lo || w->continuationOf > hi)) {
+        drawSingleHighlight(renderer, lineHeight, w->continuationOf);
+      }
     }
   } else {
     const int selIdx = getCurrentFlatIndex();
