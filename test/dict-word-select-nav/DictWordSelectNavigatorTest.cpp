@@ -590,6 +590,15 @@ static void testRenderHighlightMultiSelectHyphenatedFirstHalf() {
   nav.renderHighlight(renderer, 16);
   CHECK(renderer.fillRectCallCount == 3, "multi-select ending on first half: 3 fillRects (wordB, under-, stand)");
   CHECK(renderer.drawTextCallCount == 3, "multi-select ending on first half: 3 drawTexts");
+
+  // Confirm the selection and verify the phrase includes the continuation half.
+  input.reset();
+  input.setReleased(MappedInputManager::Button::Confirm, true);
+  std::string confirmedPhrase;
+  auto action = nav.handleMultiSelectInput(input, confirmedPhrase);
+  CHECK(action == WordSelectNavigator::MultiSelectAction::PhraseReady, "confirm yields PhraseReady");
+  CHECK(confirmedPhrase == "wordB under- stand",
+        "phrase includes second half even though it lay outside the flat-index range");
 }
 
 // Multi-select highlight: when the range starts on the second half (anchor on
@@ -600,6 +609,9 @@ static void testRenderHighlightMultiSelectHyphenatedSecondHalf() {
   WordSelectNavigator nav = makeHyphenatedFixture();
   MappedInputManager input;
   GfxRenderer renderer;
+
+  CHECK(nav.getSelected() != nullptr && std::strcmp(nav.getDisplay(*nav.getSelected()), "wordD") == 0,
+        "fixture starts on 'wordD'");
 
   // Row-nav Down from initial wordD position lands on stand (via row nav, exempt from snap).
   // Navigate to wordD first, then Up to row 0, then Down to row 1 to land on stand.
@@ -637,6 +649,15 @@ static void testRenderHighlightMultiSelectHyphenatedSecondHalf() {
   nav.renderHighlight(renderer, 16);
   CHECK(renderer.fillRectCallCount == 3, "multi-select starting on second half: 3 fillRects (under-, stand, wordD)");
   CHECK(renderer.drawTextCallCount == 3, "multi-select starting on second half: 3 drawTexts");
+
+  // Confirm the selection and verify the phrase includes the first half of the pair.
+  input.reset();
+  input.setReleased(MappedInputManager::Button::Confirm, true);
+  std::string confirmedPhrase;
+  auto action = nav.handleMultiSelectInput(input, confirmedPhrase);
+  CHECK(action == WordSelectNavigator::MultiSelectAction::PhraseReady, "confirm yields PhraseReady");
+  CHECK(confirmedPhrase == "under- stand wordD",
+        "phrase includes first half even though it lay outside the flat-index range");
 }
 
 // Run Tests A–E against any two-row fixture with the same layout as
