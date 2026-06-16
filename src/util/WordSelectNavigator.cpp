@@ -116,24 +116,19 @@ std::string WordSelectNavigator::buildPhrase(int fromIdx, int toIdx) const {
   const int lo = std::min(fromIdx, toIdx);
   const int hi = std::max(fromIdx, toIdx);
   std::string phrase;
-  // If lo is a second half, prepend its first-half partner (mirrors renderHighlight).
-  const auto* loWord = getWordAt(lo);
-  if (loWord && loWord->continuationOf >= 0) {
-    const auto* firstHalf = getWordAt(loWord->continuationOf);
-    if (firstHalf) phrase += getDisplay(*firstHalf);
-  }
+  // Skip index for a hyphenated pair's second half once its merged lookup text
+  // has already been emitted via the first half, so the pair isn't duplicated.
+  int skipIdx = -1;
   for (int i = lo; i <= hi; i++) {
+    if (i == skipIdx) continue;
     const auto* w = getWordAt(i);
     if (!w) continue;
     if (!phrase.empty()) phrase += ' ';
-    phrase += getDisplay(*w);
-  }
-  // If hi is a first half, append its second-half partner (mirrors renderHighlight).
-  const auto* hiWord = getWordAt(hi);
-  if (hiWord && hiWord->continuationIndex >= 0) {
-    if (!phrase.empty()) phrase += ' ';
-    const auto* secondHalf = getWordAt(hiWord->continuationIndex);
-    if (secondHalf) phrase += getDisplay(*secondHalf);
+    // getLookup() returns the merged, hyphen-stripped text for a hyphenated
+    // pair (e.g. "externity" for "exter-" + "nity"), matching the single-word
+    // lookup path. For ordinary words it equals the display text.
+    phrase += getLookup(*w);
+    if (w->continuationIndex >= 0) skipIdx = w->continuationIndex;
   }
   return phrase;
 }
