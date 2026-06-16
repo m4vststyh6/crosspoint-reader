@@ -177,6 +177,13 @@ the second half lies one index outside the anchor-to-cursor range.</p>
     rule).</li>
 <li>Verify: the first half <strong>and</strong> the second half are both inverted,
     along with all words between the anchor and the first half.</li>
+<li>Press <em>Confirm</em> to finalize the selection and look up the phrase.
+    Verify: the looked-up term shown in the definition view (or "not found"
+    popup) joins the two halves into <strong>one hyphen-free word</strong> —
+    e.g. <em>self-determination</em> split across lines must look up as
+    <em>selfdetermination</em>, not <em>self- determination</em>. The hyphen
+    at the line break must not appear in the search term, and the term must
+    not be duplicated.</li>
 </ol>
 <h3>Steps — range starting on second half</h3>
 <ol>
@@ -189,6 +196,24 @@ the second half lies one index outside the anchor-to-cursor range.</p>
 <li>Verify: the first half is highlighted in addition to the second half and the
     words to its right. The first half must not be left un-highlighted simply
     because it falls outside the anchor-to-cursor index range.</li>
+<li>Press <em>Confirm</em> to finalize the selection and look up the phrase.
+    Verify: the looked-up term merges both halves into one hyphen-free word, as
+    in the previous steps, and includes the words to the right of the pair
+    (e.g. <em>selfdetermination relies</em>, not <em>self- determination
+    relies</em>).</li>
+</ol>
+<h3>Steps — range spanning both halves</h3>
+<ol>
+<li>Navigate to a word <strong>two or three words before</strong> the first half
+    of the target pair.</li>
+<li>Long-press <em>Confirm</em> to enter multi-select mode.</li>
+<li>Press <em>Right</em> until the cursor lands two or three words
+    <strong>after</strong> the second half — both halves of the pair are now
+    inside the anchor-to-cursor range, not just adjacent to it.</li>
+<li>Press <em>Confirm</em> to finalize the selection. Verify: the merged
+    hyphen-free word appears <strong>exactly once</strong> in the looked-up
+    term — the first and second halves must not each contribute a separate,
+    still-hyphenated token.</li>
 </ol>
 
 <h2>Test H: All navigation rules hold inside the dictionary definition view</h2>
