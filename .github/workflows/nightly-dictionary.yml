@@ -25,9 +25,11 @@ jobs:
           git remote add dict https://github.com/mcrosson/crosspoint-reader.git
           git fetch upstream master
           git fetch dict feat-dictionary
-          git checkout -B nightly-dictionary upstream/master
+          git fetch origin nightly-dictionary || true
+          git checkout nightly-dictionary 2>/dev/null || git checkout -b nightly-dictionary
+          git merge --no-edit upstream/master
           git merge --no-edit dict/feat-dictionary
-          git push origin nightly-dictionary --force
+          git push origin nightly-dictionary
 
       - uses: actions/setup-python@v6
         with:
