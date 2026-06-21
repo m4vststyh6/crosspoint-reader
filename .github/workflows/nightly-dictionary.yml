@@ -1,0 +1,43 @@
+name: Nightly Dictionary Build
+
+on:
+  schedule:
+    - cron: '0 3 * * *'   # täglich 3 Uhr UTC
+  workflow_dispatch:        # manuell auslösbar im Actions-Tab
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Merge upstream master + dictionary branch
+        run: |
+          git config user.name "nightly-bot"
+          git config user.email "nightly-bot@users.noreply.github.com"
+          git remote add upstream https://github.com/crosspoint-reader/crosspoint-reader.git
+          git remote add dict https://github.com/mcrosson/crosspoint-reader.git
+          git fetch upstream master
+          git fetch dict feat-dictionary
+          git checkout -B nightly-dictionary upstream/master
+          git merge --no-edit dict/feat-dictionary
+          git push origin nightly-dictionary --force
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.14'
+
+      - run: pip install --upgrade platformio
+
+      - run: pio run -e gh_release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware-nightly-dictionary
+          path: .pio/build/*/firmware.bin
